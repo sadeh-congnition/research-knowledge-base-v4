@@ -105,3 +105,17 @@ class LLMConfig(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.model_name})"
+
+
+class EmbeddingModelConfig(models.Model):
+    model_name: models.CharField = models.CharField(max_length=255)
+    model_provider: models.CharField = models.CharField(max_length=255)
+    is_active: models.BooleanField = models.BooleanField(default=False)
+    date_created: models.DateTimeField = models.DateTimeField(auto_now_add=True)
+    date_updated: models.DateTimeField = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-is_active", "date_created"]
+
+    def __str__(self) -> str:
+        return f"{self.model_name} ({self.model_provider})"

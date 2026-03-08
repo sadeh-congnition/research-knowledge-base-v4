@@ -50,7 +50,6 @@ CHROMADB_COLLECTION_NAME = 'resource_chunks'
 
 # LMStudio embedding endpoint
 LMSTUDIO_BASE_URL = 'http://localhost:1234'
-LMSTUDIO_EMBEDDING_MODEL = 'text-embedding-embeddinggemma-300m'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

@@ -17,8 +17,11 @@ def get_collection(client: chromadb.ClientAPI | None = None) -> chromadb.Collect
     )
 
 
+from kb.models import EmbeddingModelConfig
+
+
 def _get_embeddings(texts: list[str]) -> list[list[float]]:
-    """Get embeddings from LMStudio server.
+    """Get embeddings from the configured provider.
 
     Args:
         texts: List of texts to embed.
@@ -26,17 +29,24 @@ def _get_embeddings(texts: list[str]) -> list[list[float]]:
     Returns:
         List of embedding vectors.
     """
-    response = httpx.post(
-        f"{settings.LMSTUDIO_BASE_URL}/v1/embeddings",
-        json={
-            "model": settings.LMSTUDIO_EMBEDDING_MODEL,
-            "input": texts,
-        },
-        timeout=120.0,
-    )
-    response.raise_for_status()
-    data = response.json()
-    return [item["embedding"] for item in data["data"]]
+    config = EmbeddingModelConfig.objects.filter(is_active=True).first()
+    if not config:
+        raise ValueError("No active EmbeddingModelConfig found.")
+
+    if config.model_provider == "LMStudio":
+        response = httpx.post(
+            f"{settings.LMSTUDIO_BASE_URL}/v1/embeddings",
+            json={
+                "model": config.model_name,
+                "input": texts,
+            },
+            timeout=120.0,
+        )
+        response.raise_for_status()
+        data = response.json()
+        return [item["embedding"] for item in data["data"]]
+    else:
+        raise NotImplementedError(f"Provider {config.model_provider} not implemented.")
 
 
 def add_chunks(resource_id: int, chunks: list[str]) -> None:
