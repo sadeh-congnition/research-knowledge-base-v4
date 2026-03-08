@@ -315,8 +315,12 @@ class ResearchKBApp(App):
 
     def _show_message(self, text: str) -> None:
         container = self.query_one("#main-container", Container)
-        container.remove_children()
-        container.mount(Static(text, id="welcome"))
+        try:
+            welcome = container.query_one("#welcome", Static)
+            welcome.update(text)
+        except Exception:
+            container.remove_children()
+            container.mount(Static(text, id="welcome"))
 
     def _show_welcome(self) -> None:
         self._show_message(
