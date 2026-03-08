@@ -64,6 +64,11 @@ class ChunkOut(Schema):
 # --- LLMConfig Schemas ---
 
 
+class DefaultLLMConfigIn(Schema):
+    model_name: str
+    api_key: str | None = None
+
+
 class LLMConfigIn(Schema):
     name: str
     model_name: str

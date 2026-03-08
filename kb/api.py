@@ -15,6 +15,7 @@ from kb.schemas import (
     ResourceOut,
     SecretIn,
     SecretOut,
+    DefaultLLMConfigIn,
 )
 from kb.services import chat as chat_service
 from kb.services import chromadb_service
@@ -122,6 +123,28 @@ api.add_router("/chunk-configs", chunk_config_router)
 # ---- LLMConfig Endpoints ----
 
 llm_config_router = Router(tags=["llm-configs"])
+
+
+@llm_config_router.post("/default/", response=LLMConfigOut)
+def setup_default_llm_config(request, payload: DefaultLLMConfigIn) -> LLMConfig:
+    secret = None
+    if payload.api_key:
+        secret, _ = Secret.objects.update_or_create(
+            title="DEFAULT_LLM_API_KEY", defaults={"value": payload.api_key}
+        )
+
+    # Clear other defaults
+    LLMConfig.objects.filter(is_default=True).update(is_default=False)
+
+    config, _ = LLMConfig.objects.update_or_create(
+        name="Default Chat LLM",
+        defaults={
+            "model_name": payload.model_name,
+            "secret": secret,
+            "is_default": True,
+        },
+    )
+    return config
 
 
 @llm_config_router.get("/", response=list[LLMConfigOut])

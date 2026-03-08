@@ -6,6 +6,7 @@ from kb.models import ChunkConfig, LLMConfig, Resource, Secret
 from kb.schemas import (
     LLMConfigIn,
     LLMConfigOut,
+    DefaultLLMConfigIn,
     ResourceListOut,
     SecretIn,
     SecretOut,
@@ -145,3 +146,60 @@ class TestLLMConfigEndpoints:
         assert response.status_code == 200
         data = LLMConfigOut(**response.json())
         assert data.secret_id is None
+
+
+class TestDefaultLLMConfigEndpoints:
+    def test_setup_default_llm_config_with_key(self, db):
+        payload = DefaultLLMConfigIn(
+            model_name="openai/gpt-4o",
+            api_key="sk-test-key",
+        )
+        response = client.post("/llm-configs/default/", json=payload.dict())
+        assert response.status_code == 200
+        data = LLMConfigOut(**response.json())
+        
+        assert data.name == "Default Chat LLM"
+        assert data.model_name == "openai/gpt-4o"
+        assert data.is_default is True
+        assert data.secret_id is not None
+        
+        # Verify secret was created
+        secret = Secret.objects.get(id=data.secret_id)
+        assert secret.title == "DEFAULT_LLM_API_KEY"
+        assert secret.value == "sk-test-key"
+
+    def test_setup_default_llm_config_without_key(self, db):
+        payload = DefaultLLMConfigIn(
+            model_name="ollama_chat/qwen3:4b",
+        )
+        response = client.post("/llm-configs/default/", json=payload.dict())
+        assert response.status_code == 200
+        data = LLMConfigOut(**response.json())
+        
+        assert data.name == "Default Chat LLM"
+        assert data.model_name == "ollama_chat/qwen3:4b"
+        assert data.is_default is True
+        assert data.secret_id is None
+
+    def test_setup_default_llm_config_clears_previous_defaults(self, db, secret):
+        # Create a regular config as default first
+        regular_payload = LLMConfigIn(
+            name="first-llm",
+            model_name="model-a",
+            is_default=True,
+            secret_id=secret.id,
+        )
+        regular_response = client.post("/llm-configs/", json=regular_payload.dict())
+        assert regular_response.status_code == 200
+        first_id = regular_response.json()["id"]
+
+        # Now setup default
+        default_payload = DefaultLLMConfigIn(
+            model_name="new-model",
+        )
+        default_response = client.post("/llm-configs/default/", json=default_payload.dict())
+        assert default_response.status_code == 200
+
+        # Verify old one is no longer default
+        first = LLMConfig.objects.get(id=first_id)
+        assert first.is_default is False

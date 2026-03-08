@@ -160,9 +160,34 @@ class ResearchKBApp(App):
 
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit"),
+        Binding("escape", "escape", "Cancel/Back"),
     ]
 
     TITLE = "Research Knowledge Base"
+
+    def on_mount(self) -> None:
+        """Called when the app is mounted."""
+        self._check_default_llm()
+
+    def _check_default_llm(self) -> None:
+        """Check if a default LLM is configured."""
+        try:
+            response = httpx.get(f"{BASE_URL}/llm-configs/", timeout=10.0)
+            if response.status_code == 200:
+                configs = response.json()
+                has_default = any(c["is_default"] for c in configs)
+                if not has_default:
+                    self.notify(
+                        "No default LLM configured! Please use the 'llm-configs' command to configure one.",
+                        severity="warning",
+                        timeout=10.0,
+                    )
+        except Exception as e:
+            self.notify(
+                f"Could not connect to backend to check LLM configuration: {e}",
+                severity="error",
+                timeout=5.0,
+            )
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -173,8 +198,7 @@ class ResearchKBApp(App):
                 "  [bold]add[/bold]       - Add a new resource\n"
                 "  [bold]list[/bold]      - List all resources\n"
                 "  [bold]chat <id>[/bold] - Chat with a resource\n"
-                "  [bold]setup-llm[/bold] - Configure default LLM\n"
-                "  [bold]add-key[/bold]   - Add an API key / secret\n"
+                "  [bold]llm-configs[/bold] - LLM Configs\n"
                 "  [bold]help[/bold]      - Show this help\n",
                 id="welcome",
             ),
@@ -183,6 +207,15 @@ class ResearchKBApp(App):
         yield Input(placeholder="Enter command...", id="command-input")
         yield Footer()
 
+    def action_escape(self) -> None:
+        """Handle the escape key to return to the main view."""
+        container = self.query_one("#main-container", Container)
+        
+        # Check if we are currently in form, chat, etc.
+        # Welcome view contains #welcome
+        if not container.query("#welcome"):
+            self._show_welcome()
+            
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle command input and form submissions."""
         input_id = event.input.id
@@ -191,11 +224,8 @@ class ResearchKBApp(App):
         if input_id == "add-type":
             self._handle_add_resource()
             return
-        elif input_id == "llm-secret-id":
-            self._handle_setup_llm()
-            return
-        elif input_id == "key-value":
-            self._handle_add_key()
+        elif input_id == "llm-api-key":
+            self._handle_llm_configs()
             return
         elif input_id != "command-input":
             return
@@ -218,10 +248,8 @@ class ResearchKBApp(App):
             self._list_resources()
         elif cmd == "chat":
             self._start_chat(args)
-        elif cmd == "setup-llm":
-            self._show_setup_llm()
-        elif cmd == "add-key":
-            self._show_add_key()
+        elif cmd == "llm-configs":
+            self._show_llm_configs()
         else:
             self._show_message(f"Unknown command: {cmd}. Type 'help' for commands.")
 
@@ -237,14 +265,17 @@ class ResearchKBApp(App):
             "  [bold]add[/bold]       - Add a new resource\n"
             "  [bold]list[/bold]      - List all resources\n"
             "  [bold]chat <id>[/bold] - Chat with a resource\n"
-            "  [bold]setup-llm[/bold] - Configure default LLM\n"
-            "  [bold]add-key[/bold]   - Add an API key / secret\n"
+            "  [bold]llm-configs[/bold] - LLM Configs\n"
             "  [bold]help[/bold]      - Show this help\n"
         )
+        command_input = self.query_one("#command-input", Input)
+        command_input.display = True
+        command_input.focus()
 
     # ---- Add Resource ----
 
     def _show_add_resource(self) -> None:
+        self.query_one("#command-input", Input).display = False
         container = self.query_one("#main-container", Container)
         container.remove_children()
         container.mount(
@@ -286,13 +317,16 @@ class ResearchKBApp(App):
             )
             if response.status_code == 200:
                 data = response.json()
-                self._show_message(
-                    f"[green]✓ Resource added![/green]\n"
-                    f"  ID: {data['id']}\n"
-                    f"  URL: {data['url']}\n"
-                    f"  Type: {data['resource_type']}\n"
-                    f"  Text length: {len(data.get('extracted_text', ''))}"
+                self.notify(
+                    f"Resource added!\n"
+                    f"ID: {data['id']}\n"
+                    f"URL: {data['url']}\n"
+                    f"Type: {data['resource_type']}\n"
+                    f"Text length: {len(data.get('extracted_text', ''))}",
+                    title="Success",
+                    severity="information",
                 )
+                self._show_welcome()
             else:
                 self._show_message(f"[red]Error: {response.text}[/red]")
         except Exception as e:
@@ -341,18 +375,7 @@ class ResearchKBApp(App):
                     self._show_message(
                         "[red]No default LLM configured![/red]\n\n"
                         "You must configure an LLM before chatting.\n"
-                        "Use 'setup-llm' to configure one.\n"
-                        "Use 'add-key' to add an API key first if needed."
-                    )
-                    return
-
-                # Check that the default config has a secret
-                default_config = next(c for c in configs if c["is_default"])
-                if default_config.get("secret_id") is None:
-                    self._show_message(
-                        "[red]Default LLM has no API key![/red]\n\n"
-                        "Use 'add-key' to add a secret, then 'setup-llm' to "
-                        "link it to your LLM config."
+                        "Use 'llm-configs' to configure one."
                     )
                     return
         except Exception as e:
@@ -371,6 +394,7 @@ class ResearchKBApp(App):
                 f"{BASE_URL}/resources/{resource_id}/", timeout=10.0
             )
             if response.status_code == 200:
+                self.query_one("#command-input", Input).display = False
                 resource = response.json()
                 container = self.query_one("#main-container", Container)
                 container.remove_children()
@@ -391,129 +415,75 @@ class ResearchKBApp(App):
         except Exception as e:
             self._show_message(f"[red]Error: {e}[/red]")
 
-    # ---- Setup LLM Config ----
+    # ---- LLM Configs ----
 
-    def _show_setup_llm(self) -> None:
+    def _show_llm_configs(self) -> None:
+        self.query_one("#command-input", Input).display = False
         container = self.query_one("#main-container", Container)
         container.remove_children()
 
-        # First show existing secrets to reference
-        secrets_info = ""
+        # First show existing LLM configs
+        configs_info = "[bold]Existing LLM Configurations:[/bold]\n\n"
         try:
-            response = httpx.get(f"{BASE_URL}/secrets/", timeout=10.0)
+            response = httpx.get(f"{BASE_URL}/llm-configs/", timeout=10.0)
             if response.status_code == 200:
-                secrets = response.json()
-                if secrets:
-                    secrets_info = "\n[bold]Available Secrets:[/bold]\n"
-                    for s in secrets:
-                        secrets_info += f"  ID {s['id']}: {s['title']}\n"
+                configs = response.json()
+                if configs:
+                    for c in configs:
+                        default_marker = " (DEFAULT)" if c.get("is_default") else ""
+                        configs_info += f"  - {c.get('name')} [{c.get('model_name')}]{default_marker}\n"
                 else:
-                    secrets_info = (
-                        "\n[yellow]No secrets found. Use 'add-key' first.[/yellow]\n"
-                    )
+                    configs_info += "  [yellow]No configurations found.[/yellow]\n"
         except Exception:
-            pass
+            configs_info += "  [red]Could not fetch configurations.[/red]\n"
 
         container.mount(
             Container(
-                Label(f"[bold]Setup Default LLM[/bold]{secrets_info}"),
-                Label("Config name:"),
-                Input(placeholder="my-llm", id="llm-name"),
-                Label("Model name (e.g. ollama_chat/qwen3:4b):"),
+                Label(configs_info),
+                Label("\n[bold]Setup Default LLM[/bold]\n[italic]This LLM will be used for all chats by default.\nYou can later use different models for different purposes.[/italic]"),
+                Label("Model name (e.g. ollama_chat/qwen3:4b, lm_studio/<model_name>, openrouter/<model_name>, openai/gpt-4o):\nFor more info see: https://docs.litellm.ai/docs/#basic-usage"),
                 Input(placeholder="ollama_chat/qwen3:4b", id="llm-model"),
-                Label("Secret ID (for API key):"),
-                Input(placeholder="1", id="llm-secret-id"),
-                Label("Press Enter on Secret ID field to submit"),
+                Label("API Key (optional):"),
+                Input(placeholder="sk-...", id="llm-api-key", password=True),
+                Label("Press Enter on API Key field to submit"),
                 classes="form-container",
             )
         )
 
-    def _handle_setup_llm(self) -> None:
-        name_input = self.query_one("#llm-name", Input)
+    def _handle_llm_configs(self) -> None:
         model_input = self.query_one("#llm-model", Input)
-        secret_id_input = self.query_one("#llm-secret-id", Input)
+        api_key_input = self.query_one("#llm-api-key", Input)
 
-        name = name_input.value.strip()
         model_name = model_input.value.strip()
-        secret_id_str = secret_id_input.value.strip()
+        api_key = api_key_input.value.strip()
 
-        if not name or not model_name:
-            self._show_message("[red]Name and model are required.[/red]")
+        if not model_name:
+            self._show_message("[red]Model name is required.[/red]")
             return
 
-        secret_id = int(secret_id_str) if secret_id_str else None
-
         try:
-            from kb.schemas import LLMConfigIn
+            from kb.schemas import DefaultLLMConfigIn
 
-            payload = LLMConfigIn(
-                name=name,
+            payload = DefaultLLMConfigIn(
                 model_name=model_name,
-                is_default=True,
-                secret_id=secret_id,
+                api_key=api_key if api_key else None,
             )
             response = httpx.post(
-                f"{BASE_URL}/llm-configs/",
+                f"{BASE_URL}/llm-configs/default/",
                 json=payload.dict(),
                 timeout=30.0,
             )
             if response.status_code == 200:
                 data = response.json()
-                self._show_message(
-                    f"[green]✓ LLM configured![/green]\n"
-                    f"  Name: {data['name']}\n"
-                    f"  Model: {data['model_name']}\n"
-                    f"  Default: {data['is_default']}"
+                self.notify(
+                    f"LLM configured!\n"
+                    f"Name: {data['name']}\n"
+                    f"Model: {data['model_name']}\n"
+                    f"Default: {data['is_default']}",
+                    title="Success",
+                    severity="information"
                 )
-            else:
-                self._show_message(f"[red]Error: {response.text}[/red]")
-        except Exception as e:
-            self._show_message(f"[red]Error: {e}[/red]")
-
-    # ---- Add API Key / Secret ----
-
-    def _show_add_key(self) -> None:
-        container = self.query_one("#main-container", Container)
-        container.remove_children()
-        container.mount(
-            Container(
-                Label("[bold]Add API Key / Secret[/bold]"),
-                Label("Title (e.g. JINA_API_KEY, OPENAI_API_KEY):"),
-                Input(placeholder="OPENAI_API_KEY", id="key-title"),
-                Label("Value (the API key):"),
-                Input(placeholder="sk-...", id="key-value", password=True),
-                Label("Press Enter on Value field to submit"),
-                classes="form-container",
-            )
-        )
-
-    def _handle_add_key(self) -> None:
-        title_input = self.query_one("#key-title", Input)
-        value_input = self.query_one("#key-value", Input)
-
-        title = title_input.value.strip()
-        value = value_input.value.strip()
-
-        if not title or not value:
-            self._show_message("[red]Title and value are required.[/red]")
-            return
-
-        try:
-            from kb.schemas import SecretIn
-
-            payload = SecretIn(title=title, value=value)
-            response = httpx.post(
-                f"{BASE_URL}/secrets/",
-                json=payload.dict(),
-                timeout=30.0,
-            )
-            if response.status_code == 200:
-                data = response.json()
-                self._show_message(
-                    f"[green]✓ Secret added![/green]\n"
-                    f"  ID: {data['id']}\n"
-                    f"  Title: {data['title']}"
-                )
+                self._show_welcome()
             else:
                 self._show_message(f"[red]Error: {response.text}[/red]")
         except Exception as e:
