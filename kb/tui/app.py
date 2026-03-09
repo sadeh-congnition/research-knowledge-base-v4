@@ -12,6 +12,7 @@ from textual.widgets import (
 )
 
 import httpx
+from loguru import logger
 
 BASE_URL = "http://localhost:8001/api"
 
@@ -78,6 +79,7 @@ class ResourceChatScreen(Container):
                     )
                 )
         except Exception as e:
+            logger.exception("Error during chat message sending")
             messages_container.mount(ChatMessage(f"Error: {e}", is_user=False))
 
         messages_container.scroll_end()
@@ -192,6 +194,7 @@ class ResearchKBApp(App):
                             timeout=10.0,
                         )
         except Exception as e:
+            logger.exception("Could not connect to backend to check Text Extraction configs")
             self.notify(
                 f"Could not connect to backend to check Text Extraction configs: {e}",
                 severity="error",
@@ -212,6 +215,7 @@ class ResearchKBApp(App):
                         timeout=10.0,
                     )
         except Exception as e:
+            logger.exception("Could not connect to backend to check LLM configuration")
             self.notify(
                 f"Could not connect to backend to check LLM configuration: {e}",
                 severity="error",
@@ -237,6 +241,7 @@ class ResearchKBApp(App):
                     timeout=5.0,
                 )
         except Exception as e:
+            logger.exception("Could not connect to backend to check embedding status")
             self.notify(
                 f"Could not connect to backend to check embedding status: {e}",
                 severity="error",
@@ -271,7 +276,7 @@ class ResearchKBApp(App):
         if not container.query("#welcome"):
             self._show_welcome()
             
-    def on_input_submitted(self, event: Input.Submitted) -> None:
+    async def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle command input and form submissions."""
         input_id = event.input.id
 
@@ -280,7 +285,7 @@ class ResearchKBApp(App):
             self._handle_add_resource()
             return
         elif input_id == "llm-api-key":
-            self._handle_llm_configs()
+            await self._handle_llm_configs()
             return
         elif input_id == "jina-api-key":
             self._handle_text_extraction_configs()
@@ -319,6 +324,7 @@ class ResearchKBApp(App):
             welcome = container.query_one("#welcome", Static)
             welcome.update(text)
         except Exception:
+            logger.exception("Error updating welcome message")
             container.remove_children()
             container.mount(Static(text, id="welcome"))
 
@@ -395,6 +401,7 @@ class ResearchKBApp(App):
             else:
                 self._show_message(f"[red]Error: {response.text}[/red]")
         except Exception as e:
+            logger.exception("An error occurred")
             self._show_message(f"[red]Error: {e}[/red]")
 
     # ---- List Resources ----
@@ -418,6 +425,7 @@ class ResearchKBApp(App):
             else:
                 self._show_message(f"[red]Error: {response.text}[/red]")
         except Exception as e:
+            logger.exception("An error occurred")
             self._show_message(f"[red]Error: {e}[/red]")
 
     # ---- Chat with Resource ----
@@ -444,6 +452,7 @@ class ResearchKBApp(App):
                     )
                     return
         except Exception as e:
+            logger.exception("Error checking LLM config before chat")
             self._show_message(f"[red]Error checking LLM config: {e}[/red]")
             return
 
@@ -478,6 +487,7 @@ class ResearchKBApp(App):
             else:
                 self._show_message(f"[red]Error: {response.text}[/red]")
         except Exception as e:
+            logger.exception("An error occurred")
             self._show_message(f"[red]Error: {e}[/red]")
 
     # ---- LLM Configs ----
@@ -496,16 +506,19 @@ class ResearchKBApp(App):
                 if configs:
                     for c in configs:
                         default_marker = " (DEFAULT)" if c.get("is_default") else ""
-                        configs_info += f"  - {c.get('name')} [{c.get('model_name')}]{default_marker}\n"
+                        configs_info += f"  - {c.get('name')} [{c.get('provider')}/{c.get('model_name')}]{default_marker}\n"
                 else:
                     configs_info += "  [yellow]No configurations found.[/yellow]\n"
         except Exception:
+            logger.exception("Could not fetch configurations")
             configs_info += "  [red]Could not fetch configurations.[/red]\n"
 
         container.mount(
             Container(
                 Label(configs_info),
                 Label("\n[bold]Setup Default LLM[/bold]\n[italic]This LLM will be used for all chats by default.\nYou can later use different models for different purposes.[/italic]"),
+                Label("Provider (e.g. openai, ollama, openrouter):"),
+                Input(placeholder="openai", id="llm-provider"),
                 Label("Model name (e.g. ollama_chat/qwen3:4b, lm_studio/<model_name>, openrouter/<model_name>, openai/gpt-4o):\nFor more info see: https://docs.litellm.ai/docs/#basic-usage"),
                 Input(placeholder="ollama_chat/qwen3:4b", id="llm-model"),
                 Label("API Key (optional):"),
@@ -515,10 +528,12 @@ class ResearchKBApp(App):
             )
         )
 
-    def _handle_llm_configs(self) -> None:
+    async def _handle_llm_configs(self) -> None:
+        provider_input = self.query_one("#llm-provider", Input)
         model_input = self.query_one("#llm-model", Input)
         api_key_input = self.query_one("#llm-api-key", Input)
 
+        provider = provider_input.value.strip() or "openai"
         model_name = model_input.value.strip()
         api_key = api_key_input.value.strip()
 
@@ -526,25 +541,32 @@ class ResearchKBApp(App):
             self._show_message("[red]Model name is required.[/red]")
             return
 
+        self._show_message("[yellow]Please wait while I test the LLM connection!...[/yellow]")
+
         try:
             from kb.schemas import DefaultLLMConfigIn
 
             payload = DefaultLLMConfigIn(
                 model_name=model_name,
+                provider=provider,
                 api_key=api_key if api_key else None,
             )
-            response = httpx.post(
-                f"{BASE_URL}/llm-configs/default/",
-                json=payload.dict(),
-                timeout=30.0,
-            )
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{BASE_URL}/llm-configs/default/",
+                    json=payload.dict(),
+                    timeout=30.0,
+                )
             if response.status_code == 200:
                 data = response.json()
+                test_output = data.get("test_response") or "No response"
                 self.notify(
                     f"LLM configured!\n"
                     f"Name: {data['name']}\n"
+                    f"Provider: {data['provider']}\n"
                     f"Model: {data['model_name']}\n"
-                    f"Default: {data['is_default']}",
+                    f"Default: {data['is_default']}\n"
+                    f"Test Response: {test_output}",
                     title="Success",
                     severity="information"
                 )
@@ -552,6 +574,7 @@ class ResearchKBApp(App):
             else:
                 self._show_message(f"[red]Error: {response.text}[/red]")
         except Exception as e:
+            logger.exception("An error occurred")
             self._show_message(f"[red]Error: {e}[/red]")
 
     # ---- Text Extraction Configs ----
@@ -588,6 +611,7 @@ class ResearchKBApp(App):
                         configs_info += "\n[green]JINA AI API Key is configured.[/green]\n"
 
         except Exception:
+            logger.exception("Could not fetch configurations")
             configs_info += "  [red]Could not fetch configurations.[/red]\n"
 
         self._jina_config_id = jina_config_id
@@ -608,6 +632,7 @@ class ResearchKBApp(App):
                 try:
                     self.query_one("#jina-api-key", Input).focus()
                 except Exception:
+                    logger.exception("Error focusing Jina API key input")
                     pass
             self.call_after_refresh(_focus_input)
         else:
@@ -651,5 +676,6 @@ class ResearchKBApp(App):
                 self._show_message(f"[red]Error: {response.text}[/red]")
 
         except Exception as e:
+            logger.exception("An error occurred")
             self._show_message(f"[red]Error: {e}[/red]")
 

@@ -1,4 +1,5 @@
 from django.shortcuts import get_object_or_404
+from loguru import logger
 from ninja import NinjaAPI, Router
 
 from kb.models import (
@@ -79,9 +80,7 @@ def create_resource(request, payload: ResourceIn) -> Resource:
     chunk_config = ChunkConfig.objects.first()
     if chunk_config:
         # Chunk the extracted text
-        chunk_texts = chunking_service.chunk_text(
-            extracted_text, chunk_config.details
-        )
+        chunk_texts = chunking_service.chunk_text(extracted_text, chunk_config.details)
 
         # Save chunks to DB
         chunks_to_create = [
@@ -142,7 +141,9 @@ def list_text_extraction_configs(request) -> list[TextExtractionConfig]:
 
 
 @text_extraction_config_router.post("/{config_id}/secret/", response=SecretOut)
-def set_text_extraction_config_secret(request, config_id: int, payload: SecretIn) -> Secret:
+def set_text_extraction_config_secret(
+    request, config_id: int, payload: SecretIn
+) -> Secret:
     config = get_object_or_404(TextExtractionConfig, id=config_id)
     secret = config.secrets.first()
     if secret:
@@ -151,9 +152,7 @@ def set_text_extraction_config_secret(request, config_id: int, payload: SecretIn
         secret.save()
     else:
         secret = Secret.objects.create(
-            title=payload.title,
-            value=payload.value,
-            text_extraction_config=config
+            title=payload.title, value=payload.value, text_extraction_config=config
         )
     return secret
 
@@ -174,6 +173,35 @@ api.add_router("/text-extraction-configs", text_extraction_config_router)
 llm_config_router = Router(tags=["llm-configs"])
 
 
+def test_llm_connection(model_name: str, provider: str, api_key: str | None) -> str:
+    import os
+    import litellm
+
+    if api_key:
+        if provider == "openrouter":
+            os.environ["OPENROUTER_API_KEY"] = api_key
+        elif provider == "openai":
+            os.environ["OPENAI_API_KEY"] = api_key
+        elif provider == "anthropic":
+            os.environ["ANTHROPIC_API_KEY"] = api_key
+        else:
+            os.environ["OPENAI_API_KEY"] = api_key
+
+    if provider == "openrouter" and not model_name.startswith("openrouter/"):
+        model_name = f"openrouter/{model_name}"
+
+    try:
+        response = litellm.completion(
+            model=model_name,
+            messages=[{"role": "user", "content": "Hi, tell me a one sentence joke!"}],
+            max_tokens=50,
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        logger.exception("LLM connection test failed")
+        return f"Connection test failed: {e}"
+
+
 @llm_config_router.post("/default/", response=LLMConfigOut)
 def setup_default_llm_config(request, payload: DefaultLLMConfigIn) -> LLMConfig:
     secret = None
@@ -185,13 +213,21 @@ def setup_default_llm_config(request, payload: DefaultLLMConfigIn) -> LLMConfig:
     # Clear other defaults
     LLMConfig.objects.filter(is_default=True).update(is_default=False)
 
+    if payload.provider not in payload.model_name:
+        payload.model_name = f"{payload.provider}/{payload.model_name}"
+
     config, _ = LLMConfig.objects.update_or_create(
         name="Default Chat LLM",
         defaults={
             "model_name": payload.model_name,
+            "provider": payload.provider,
             "secret": secret,
             "is_default": True,
         },
+    )
+
+    config.test_response = test_llm_connection(
+        payload.model_name, payload.provider, payload.api_key
     )
     return config
 
@@ -214,9 +250,16 @@ def create_llm_config(request, payload: LLMConfigIn) -> LLMConfig:
     config = LLMConfig.objects.create(
         name=payload.name,
         model_name=payload.model_name,
+        provider=payload.provider,
         is_default=payload.is_default,
         secret=secret,
     )
+
+    secret_value = secret.value if secret else None
+    config.test_response = test_llm_connection(
+        payload.model_name, payload.provider, secret_value
+    )
+
     return config
 
 
@@ -269,6 +312,7 @@ def get_embedding_status(request) -> dict:
                     "model_name": config.model_name,
                 }
         except httpx.ConnectError:
+            logger.exception("LMStudio server not running")
             return {
                 "is_valid": False,
                 "message": "LMStudio server not running",
@@ -276,6 +320,7 @@ def get_embedding_status(request) -> dict:
                 "model_name": config.model_name,
             }
         except Exception as e:
+            logger.exception("Error connecting to LMStudio")
             return {
                 "is_valid": False,
                 "message": f"Error connecting to LMStudio: {str(e)}",

@@ -91,7 +91,8 @@ class TestLLMConfigEndpoints:
     def test_create_llm_config(self, db, secret):
         payload = LLMConfigIn(
             name="my-llm",
-            model_name="ollama_chat/qwen3:4b",
+            model_name="liquid/lfm-2.5-1.2b-instruct:free",
+            provider="openrouter",
             is_default=True,
             secret_id=secret.id,
         )
@@ -106,7 +107,8 @@ class TestLLMConfigEndpoints:
         # Create first config as default
         payload1 = LLMConfigIn(
             name="first-llm",
-            model_name="model-a",
+            model_name="liquid/lfm-2.5-1.2b-instruct:free",
+            provider="openrouter",
             is_default=True,
             secret_id=secret.id,
         )
@@ -117,7 +119,8 @@ class TestLLMConfigEndpoints:
         # Create second config as default
         payload2 = LLMConfigIn(
             name="second-llm",
-            model_name="model-b",
+            model_name="liquid/lfm-2.5-1.2b-instruct:free",
+            provider="openrouter",
             is_default=True,
             secret_id=secret.id,
         )
@@ -139,7 +142,8 @@ class TestLLMConfigEndpoints:
     def test_create_llm_config_without_secret(self, db):
         payload = LLMConfigIn(
             name="local-llm",
-            model_name="ollama_chat/qwen3:4b",
+            model_name="liquid/lfm-2.5-1.2b-instruct:free",
+            provider="openrouter",
             is_default=False,
         )
         response = client.post("/llm-configs/", json=payload.dict())
@@ -151,7 +155,8 @@ class TestLLMConfigEndpoints:
 class TestDefaultLLMConfigEndpoints:
     def test_setup_default_llm_config_with_key(self, db):
         payload = DefaultLLMConfigIn(
-            model_name="openai/gpt-4o",
+            model_name="liquid/lfm-2.5-1.2b-instruct:free",
+            provider="openrouter",
             api_key="sk-test-key",
         )
         response = client.post("/llm-configs/default/", json=payload.dict())
@@ -159,7 +164,7 @@ class TestDefaultLLMConfigEndpoints:
         data = LLMConfigOut(**response.json())
         
         assert data.name == "Default Chat LLM"
-        assert data.model_name == "openai/gpt-4o"
+        assert data.model_name == "liquid/lfm-2.5-1.2b-instruct:free"
         assert data.is_default is True
         assert data.secret_id is not None
         
@@ -170,14 +175,15 @@ class TestDefaultLLMConfigEndpoints:
 
     def test_setup_default_llm_config_without_key(self, db):
         payload = DefaultLLMConfigIn(
-            model_name="ollama_chat/qwen3:4b",
+            model_name="liquid/lfm-2.5-1.2b-instruct:free",
+            provider="openrouter",
         )
         response = client.post("/llm-configs/default/", json=payload.dict())
         assert response.status_code == 200
         data = LLMConfigOut(**response.json())
         
         assert data.name == "Default Chat LLM"
-        assert data.model_name == "ollama_chat/qwen3:4b"
+        assert data.model_name == "liquid/lfm-2.5-1.2b-instruct:free"
         assert data.is_default is True
         assert data.secret_id is None
 
@@ -185,7 +191,8 @@ class TestDefaultLLMConfigEndpoints:
         # Create a regular config as default first
         regular_payload = LLMConfigIn(
             name="first-llm",
-            model_name="model-a",
+            model_name="liquid/lfm-2.5-1.2b-instruct:free",
+            provider="openrouter",
             is_default=True,
             secret_id=secret.id,
         )
@@ -195,7 +202,8 @@ class TestDefaultLLMConfigEndpoints:
 
         # Now setup default
         default_payload = DefaultLLMConfigIn(
-            model_name="new-model",
+            model_name="liquid/lfm-2.5-1.2b-instruct:free",
+            provider="openrouter",
         )
         default_response = client.post("/llm-configs/default/", json=default_payload.dict())
         assert default_response.status_code == 200

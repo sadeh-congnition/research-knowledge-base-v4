@@ -31,7 +31,7 @@ class ChunkAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
 
 @admin.register(LLMConfig)
 class LLMConfigAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
-    list_display = ("name", "model_name", "is_default", "date_created")
+    list_display = ("name", "provider", "model_name", "is_default", "date_created")
     list_filter = ("is_default",)
 
 

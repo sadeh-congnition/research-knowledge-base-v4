@@ -60,8 +60,19 @@ def chat_with_resource(
     # Set API key as environment variable if the config has a secret
     if llm_config.secret:
         import os
+        key = llm_config.secret.value
+        if llm_config.provider == "openrouter":
+            os.environ["OPENROUTER_API_KEY"] = key
+        elif llm_config.provider == "openai":
+            os.environ["OPENAI_API_KEY"] = key
+        elif llm_config.provider == "anthropic":
+            os.environ["ANTHROPIC_API_KEY"] = key
+        else:
+            os.environ["OPENAI_API_KEY"] = key
 
-        os.environ["OPENAI_API_KEY"] = llm_config.secret.value
+    # Add openrouter prefix if needed
+    if llm_config.provider == "openrouter" and not model_name.startswith("openrouter/"):
+        model_name = f"openrouter/{model_name}"
 
     ai_msg: Message
     ai_msg, _, _ = chat_instance.send_user_msg_to_llm(

@@ -89,6 +89,7 @@ class Chunk(models.Model):
 class LLMConfig(models.Model):
     name: models.CharField = models.CharField(max_length=255, unique=True)
     model_name: models.CharField = models.CharField(max_length=255)
+    provider: models.CharField = models.CharField(max_length=255, default="openai")
     is_default: models.BooleanField = models.BooleanField(default=False)
     secret: models.ForeignKey = models.ForeignKey(
         Secret,

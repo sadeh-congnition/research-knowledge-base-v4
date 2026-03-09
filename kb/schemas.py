@@ -77,12 +77,14 @@ class ChunkOut(Schema):
 
 class DefaultLLMConfigIn(Schema):
     model_name: str
+    provider: str
     api_key: str | None = None
 
 
 class LLMConfigIn(Schema):
     name: str
     model_name: str
+    provider: str
     is_default: bool = False
     secret_id: int | None = None
 
@@ -91,9 +93,11 @@ class LLMConfigOut(Schema):
     id: int
     name: str
     model_name: str
+    provider: str
     is_default: bool
     secret_id: int | None
     date_created: datetime
+    test_response: str | None = None
 
 
 # --- EmbeddingModelConfig Schemas ---
