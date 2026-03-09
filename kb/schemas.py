@@ -131,3 +131,11 @@ class ChatHistoryOut(Schema):
     type: str
     text: str
     date_created: datetime
+
+
+class ChatListOut(Schema):
+    id: int
+    resource_id: int
+    resource_url: str
+    last_message: str
+    date_updated: datetime

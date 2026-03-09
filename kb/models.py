@@ -125,3 +125,17 @@ class EmbeddingModelConfig(models.Model):
 
     def __str__(self) -> str:
         return f"{self.model_name} ({self.model_provider})"
+
+
+class ResourceChat(models.Model):
+    resource: models.ForeignKey = models.ForeignKey(
+        Resource, on_delete=models.CASCADE, related_name="resource_chats"
+    )
+    chat_id: models.IntegerField = models.IntegerField(unique=True)
+    date_created: models.DateTimeField = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date_created"]
+
+    def __str__(self) -> str:
+        return f"Chat {self.chat_id} for Resource {self.resource_id}"

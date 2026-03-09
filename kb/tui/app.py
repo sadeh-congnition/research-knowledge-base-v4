@@ -256,6 +256,7 @@ class ResearchKBApp(App):
                 "Commands:\n"
                 "  [bold]add[/bold]       - Add a new resource\n"
                 "  [bold]list[/bold]      - List all resources\n"
+                "  [bold]chats[/bold]     - List all chats\n"
                 "  [bold]chat <id>[/bold] - Chat with a resource\n"
                 "  [bold]llm-configs[/bold] - LLM Configs\n"
                 "  [bold]text-extraction-configs[/bold] - Text Extraction Configs\n"
@@ -309,6 +310,8 @@ class ResearchKBApp(App):
             self._show_add_resource()
         elif cmd == "list":
             self._list_resources()
+        elif cmd == "chats":
+            self._list_chats()
         elif cmd == "chat":
             self._start_chat(args)
         elif cmd == "llm-configs":
@@ -334,6 +337,7 @@ class ResearchKBApp(App):
             "Commands:\n"
             "  [bold]add[/bold]       - Add a new resource\n"
             "  [bold]list[/bold]      - List all resources\n"
+            "  [bold]chats[/bold]     - List all chats\n"
             "  [bold]chat <id>[/bold] - Chat with a resource\n"
             "  [bold]llm-configs[/bold] - LLM Configs\n"
             "  [bold]text-extraction-configs[/bold] - Text Extraction Configs\n"
@@ -421,6 +425,36 @@ class ResearchKBApp(App):
                         f"  [bold]{r['id']}[/bold] | {r['resource_type']} | {r['url']}"
                     )
                 lines.append("\nUse 'chat <id>' to chat with a resource.")
+                self._show_message("\n".join(lines))
+            else:
+                self._show_message(f"[red]Error: {response.text}[/red]")
+        except Exception as e:
+            logger.exception("An error occurred")
+            self._show_message(f"[red]Error: {e}[/red]")
+
+    # ---- List Chats ----
+
+    def _list_chats(self) -> None:
+        try:
+            response = httpx.get(f"{BASE_URL}/chat/", timeout=30.0)
+            if response.status_code == 200:
+                chats = response.json()
+                if not chats:
+                    self._show_message("No chats found. Use 'chat <resource_id>' to start one.")
+                    return
+
+                lines = ["[bold]Existing Chats:[/bold]\n"]
+                for c in chats:
+                    # Truncate last message for display
+                    last_msg = c['last_message'].replace('\n', ' ')
+                    if len(last_msg) > 50:
+                        last_msg = last_msg[:47] + "..."
+                    
+                    lines.append(
+                        f"  [bold]{c['id']}[/bold] | {c['resource_url']}\n"
+                        f"    [italic]{last_msg}[/italic]"
+                    )
+                lines.append("\nUse 'chat <id>' (using resource ID) to start a new chat or continue.")
                 self._show_message("\n".join(lines))
             else:
                 self._show_message(f"[red]Error: {response.text}[/red]")

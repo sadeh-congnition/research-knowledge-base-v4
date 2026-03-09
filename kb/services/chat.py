@@ -1,9 +1,9 @@
 from django.contrib.auth import get_user_model
 
 from django_llm_chat.chat import Chat
-from django_llm_chat.models import Message
+from django_llm_chat.models import Message, Chat as ChatModel
 
-from kb.models import LLMConfig, Resource
+from kb.models import LLMConfig, Resource, ResourceChat
 from kb.services import llm as llm_service
 
 User = get_user_model()
@@ -55,6 +55,12 @@ def chat_with_resource(
         )
         chat_instance.create_system_message(system_prompt, user)
 
+        # Link Chat with Resource
+        ResourceChat.objects.create(
+            resource=resource,
+            chat_id=chat_instance.chat_db_model.id,
+        )
+
     # Determine the model name
     model_name = llm_config.model_name
 
@@ -96,3 +102,37 @@ def get_chat_messages(chat_id: int) -> list[dict]:
         }
         for msg in messages
     ]
+
+
+def get_chat_list() -> list[dict]:
+    """Get all chats with their resource info and last message.
+
+    Returns:
+        List of chat data dicts.
+    """
+    resource_chats = ResourceChat.objects.select_related("resource").all()
+    chat_ids = [rc.chat_id for rc in resource_chats]
+
+    # Get Chat objects to get dates and token counts
+    chats = {c.id: c for c in ChatModel.objects.filter(id__in=chat_ids)}
+
+    # Get last message for each chat
+    # This could be optimized but since it's a TUI for personal use it's fine for now
+    results = []
+    for rc in resource_chats:
+        chat_model = chats.get(rc.chat_id)
+        if not chat_model:
+            continue
+
+        last_msg = Message.objects.filter(chat_id=rc.chat_id).order_by("-date_created").first()
+        results.append({
+            "id": rc.chat_id,
+            "resource_id": rc.resource.id,
+            "resource_url": rc.resource.url,
+            "last_message": last_msg.text if last_msg else "",
+            "date_updated": chat_model.date_updated,
+        })
+
+    # Sort by date_updated descending
+    results.sort(key=lambda x: x["date_updated"], reverse=True)
+    return results

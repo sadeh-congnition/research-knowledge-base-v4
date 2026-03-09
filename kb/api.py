@@ -13,6 +13,7 @@ from kb.models import (
 )
 from kb.schemas import (
     ChatHistoryOut,
+    ChatListOut,
     ChatMessageIn,
     ChatMessageOut,
     ChunkConfigOut,
@@ -380,6 +381,12 @@ def send_chat_message(request, payload: ChatMessageIn) -> dict:
 def get_chat_history(request, chat_id: int) -> list[dict]:
     """Get all messages for a chat."""
     return chat_service.get_chat_messages(chat_id)
+
+
+@chat_router.get("/", response=list[ChatListOut])
+def list_chats(request) -> list[dict]:
+    """List all chats with resource and last message info."""
+    return chat_service.get_chat_list()
 
 
 api.add_router("/chat", chat_router)
