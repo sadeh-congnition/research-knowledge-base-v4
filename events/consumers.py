@@ -100,11 +100,15 @@ def consume_clean_up_extracted_text() -> int:
 
     count = 0
     for event in unprocessed_events:
-        logger.info(f"Consumer 'Clean up extracted text' found event {event.id}. Starting processing...")
+        logger.info(
+            f"Consumer 'Clean up extracted text' found event {event.id}. Starting processing..."
+        )
         with transaction.atomic():
             try:
                 resource = get_object_or_404(Resource, id=event.entity_id)
-                logger.info(f"Calling LLM to clean up extracted text for Resource {resource.id}...")
+                logger.info(
+                    f"Calling LLM to clean up extracted text for Resource {resource.id}..."
+                )
                 # Call LLM logic
                 model_name = _get_llm_config()
 
@@ -143,7 +147,9 @@ def consume_clean_up_extracted_text() -> int:
                 EventConsumed.objects.create(event=event, consumer=consumer)
 
                 # Fire new event
-                logger.info(f"Firing 'clean up finished' event for Resource {resource.id}...")
+                logger.info(
+                    f"Firing 'clean up finished' event for Resource {resource.id}..."
+                )
                 fire_event(
                     entity=EntityTypes.RESOURCE,
                     entity_id=event.entity_id,
@@ -161,7 +167,9 @@ def consume_clean_up_extracted_text() -> int:
 
         break
 
-    logger.info(f"Finished consumer 'Clean up extracted text', processed {count} events")
+    logger.info(
+        f"Finished consumer 'Clean up extracted text', processed {count} events"
+    )
     return count
 
 
@@ -183,11 +191,15 @@ def consume_summarize() -> int:
 
     count = 0
     for event in unprocessed_events:
-        logger.info(f"Consumer 'Summarize' found event {event.id}. Starting processing...")
+        logger.info(
+            f"Consumer 'Summarize' found event {event.id}. Starting processing..."
+        )
         with transaction.atomic():
             try:
                 resource = get_object_or_404(Resource, id=event.entity_id)
-                logger.info(f"Calling LLM to summarize text for Resource {resource.id}...")
+                logger.info(
+                    f"Calling LLM to summarize text for Resource {resource.id}..."
+                )
 
                 model_name = _get_llm_config()
 
@@ -254,16 +266,22 @@ def consume_chunk_and_embed() -> int:
 
     count = 0
     for event in unprocessed_events:
-        logger.info(f"Consumer 'Chunk and Embed Resource' found event {event.id}. Starting processing...")
+        logger.info(
+            f"Consumer 'Chunk and Embed Resource' found event {event.id}. Starting processing..."
+        )
         with transaction.atomic():
             try:
                 resource = get_object_or_404(Resource, id=event.entity_id)
-                logger.info(f"Chunking and embedding text for Resource {resource.id}...")
+                logger.info(
+                    f"Chunking and embedding text for Resource {resource.id}..."
+                )
                 # Get default chunk config
                 chunk_config = ChunkConfig.objects.first()
                 if chunk_config:
                     # Chunk the extracted text
-                    chunk_texts = chunking_service.chunk_text(resource.extracted_text, chunk_config.details)
+                    chunk_texts = chunking_service.chunk_text(
+                        resource.extracted_text, chunk_config.details
+                    )
 
                     # Save chunks to DB
                     chunks_to_create = [
@@ -287,11 +305,84 @@ def consume_chunk_and_embed() -> int:
                     f"Consumed 'clean up finished' event {event.id} for Resource {resource.id} (chunked and embedded)"
                 )
             except Exception as e:
+                logger.exception(f"Failed to chunk and embed for event {event.id}: {e}")
+        break
+    logger.info(
+        f"Finished consumer 'Chunk and Embed Resource', processed {count} events"
+    )
+    return count
+
+
+def consume_extract_title_of_resource() -> int:
+    """
+    Consumer that processes "extracted text clean up finished" events.
+    It takes the first 500 characters of the extracted text and uses an LLM to extract the title.
+    """
+    logger.info("Running consumer: Extract title of resource")
+    consumer = get_or_create_consumer("Extract title of resource")
+
+    unprocessed_events = (
+        Event.objects.filter(
+            entity=EntityTypes.RESOURCE, description=EventDescriptions.CLEAN_UP_FINISHED
+        )
+        .exclude(eventconsumed__consumer=consumer)
+        .order_by("id")
+    )
+
+    count = 0
+    for event in unprocessed_events:
+        logger.info(
+            f"Consumer 'Extract title of resource' found event {event.id}. Starting processing..."
+        )
+        with transaction.atomic():
+            try:
+                resource = get_object_or_404(Resource, id=event.entity_id)
+                logger.info(
+                    f"Calling LLM to extract title for Resource {resource.id}..."
+                )
+
+                model_name = _get_llm_config()
+
+                system_prompt = (
+                    "Extract the exact title of the text provided. "
+                    "Only reply with the title and nothing else."
+                )
+                if os.environ.get("PYTEST_CURRENT_TEST"):
+                    title_text = f"MOCKED TITLE: {resource.extracted_text[:30]}"
+                else:
+                    try:
+                        with transaction.atomic():
+                            chat_instance = _create_chat_safely()
+                            user = _get_or_create_consumer_user()
+                            chat_instance.create_system_message(system_prompt, user)
+
+                            ai_msg, _, _ = chat_instance.send_user_msg_to_llm(
+                                model_name=model_name,
+                                text=resource.extracted_text[:500],
+                                user=user,
+                            )
+                            title_text = ai_msg.text or ""
+                    except Exception as e:
+                        logger.error(f"Error calling LLM for title extraction: {e}")
+                        title_text = "Unknown Title"
+
+                resource.title = title_text.strip()
+                resource.save()
+
+                EventConsumed.objects.create(event=event, consumer=consumer)
+
+                count += 1
+                logger.info(
+                    f"Consumed 'clean up finished' event {event.id} for Resource {resource.id} (extracted title)"
+                )
+            except Exception as e:
                 logger.exception(
-                    f"Failed to chunk and embed for event {event.id}: {e}"
+                    f"Failed to process extract title for event {event.id}: {e}"
                 )
         break
-    logger.info(f"Finished consumer 'Chunk and Embed Resource', processed {count} events")
+    logger.info(
+        f"Finished consumer 'Extract title of resource', processed {count} events"
+    )
     return count
 
 
@@ -301,4 +392,5 @@ def process_all_events() -> int:
     count += consume_clean_up_extracted_text()
     count += consume_summarize()
     count += consume_chunk_and_embed()
+    count += consume_extract_title_of_resource()
     return count

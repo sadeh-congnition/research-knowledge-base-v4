@@ -1,4 +1,4 @@
-from typing import Any, Union, Sequence
+from typing import Any, Union
 from django.conf import settings
 import httpx
 import numpy as np
@@ -35,11 +35,13 @@ class LMStudioEmbeddings(BaseEmbeddings):
         )
         response.raise_for_status()
         data = response.json()
-        embeddings = [np.array(item["embedding"], dtype=np.float32) for item in data["data"]]
-        
+        embeddings = [
+            np.array(item["embedding"], dtype=np.float32) for item in data["data"]
+        ]
+
         if self._dimension is None and embeddings:
             self._dimension = len(embeddings[0])
-            
+
         return embeddings
 
     @property
@@ -70,7 +72,9 @@ def chunk_text(text: str, config_details: dict[str, Any]) -> list[str]:
     if embedding_config:
         model_name = embedding_config.model_name
     else:
-        model_name = config_details.get("embedding_model", "text-embedding-embeddinggemma-300m")
+        model_name = config_details.get(
+            "embedding_model", "text-embedding-embeddinggemma-300m"
+        )
 
     # Use our custom LMStudio embedding handler
     embeddings = LMStudioEmbeddings(model_name=model_name)

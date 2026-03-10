@@ -34,7 +34,6 @@ from kb.schemas import (
 )
 from kb.services import chat as chat_service
 from kb.services import chromadb_service
-from kb.services import chunking as chunking_service
 from kb.services import jina as jina_service
 from kb.services import llm as llm_service
 
@@ -80,7 +79,6 @@ def create_resource(request, payload: ResourceIn) -> Resource:
         resource_type=payload.resource_type,
         extracted_text=extracted_text,
     )
-
 
     # Fire event for text extraction cleanup
     fire_event(
@@ -401,25 +399,25 @@ def search_chunks(request, query: str, n_results: int = 5) -> list[dict]:
     """Semantic search against chunks in ChromaDB."""
     if not query.strip():
         return []
-        
+
     try:
         results = chromadb_service.search(query, n_results=n_results)
         # Format for output
         formatted_results = []
         for res in results:
-            formatted_results.append({
-                "document": res["document"],
-                "distance": res["distance"],
-                "resource_id": res["metadata"].get("resource_id", 0),
-                "chunk_order": res["metadata"].get("chunk_order", 0)
-            })
+            formatted_results.append(
+                {
+                    "document": res["document"],
+                    "distance": res["distance"],
+                    "resource_id": res["metadata"].get("resource_id", 0),
+                    "chunk_order": res["metadata"].get("chunk_order", 0),
+                }
+            )
         return formatted_results
     except Exception as e:
         logger.exception("Semantic search failed")
         return api.create_response(
-            request,
-            {"error": f"Search failed: {e}"},
-            status=500
+            request, {"error": f"Search failed: {e}"}, status=500
         )
 
 

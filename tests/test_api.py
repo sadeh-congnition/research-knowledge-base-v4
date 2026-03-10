@@ -1,8 +1,7 @@
-import pytest
 from ninja.testing import TestClient
 
 from kb.api import api
-from kb.models import ChunkConfig, LLMConfig, Resource, Secret
+from kb.models import LLMConfig, Secret
 from kb.schemas import (
     LLMConfigIn,
     LLMConfigOut,
@@ -175,12 +174,12 @@ class TestDefaultLLMConfigEndpoints:
         response = client.post("/llm-configs/default/", json=payload.dict())
         assert response.status_code == 200
         data = LLMConfigOut(**response.json())
-        
+
         assert data.name == "Default Chat LLM"
         assert data.model_name == "groq/llama-3.1-8b-instant"
         assert data.is_default is True
         assert data.secret_id is not None
-        
+
         # Verify secret was created
         secret = Secret.objects.get(id=data.secret_id)
         assert secret.title == "DEFAULT_LLM_API_KEY"
@@ -194,7 +193,7 @@ class TestDefaultLLMConfigEndpoints:
         response = client.post("/llm-configs/default/", json=payload.dict())
         assert response.status_code == 200
         data = LLMConfigOut(**response.json())
-        
+
         assert data.name == "Default Chat LLM"
         assert data.model_name == "groq/llama-3.1-8b-instant"
         assert data.is_default is True
@@ -218,12 +217,15 @@ class TestDefaultLLMConfigEndpoints:
             model_name="llama-3.1-8b-instant",
             provider="groq",
         )
-        default_response = client.post("/llm-configs/default/", json=default_payload.dict())
+        default_response = client.post(
+            "/llm-configs/default/", json=default_payload.dict()
+        )
         assert default_response.status_code == 200
 
         # Verify old one is no longer default
         first = LLMConfig.objects.get(id=first_id)
         assert first.is_default is False
+
 
 # ---- TextExtractionConfig Tests ----
 
@@ -238,6 +240,7 @@ class TestTextExtractionConfigEndpoints:
 
     def test_set_and_get_text_extraction_config_secret(self, db):
         from kb.models import TextExtractionConfig
+
         config = TextExtractionConfig.objects.get(title="JINA AI API")
 
         # Get when no secret exists
@@ -246,7 +249,9 @@ class TestTextExtractionConfigEndpoints:
 
         # Set secret
         payload = SecretIn(title="JINA_API_KEY", value="my-jina-key")
-        response = client.post(f"/text-extraction-configs/{config.id}/secret/", json=payload.dict())
+        response = client.post(
+            f"/text-extraction-configs/{config.id}/secret/", json=payload.dict()
+        )
         assert response.status_code == 200
         data = SecretOut(**response.json())
         assert data.title == "JINA_API_KEY"
@@ -267,31 +272,28 @@ class TestSearchEndpoints:
         assert response.json() == []
 
     def test_search_chunks(self, db, resource_with_chunks):
-        from kb.services import chromadb_service
         # For tests, we use the actual chromadb instance to do semantic search.
         # But wait - we shouldn't use mocks as per user instruction.
         # Since resource_with_chunks is created, chunks were added to Chromadb in `conftest.py` hopefully, or tests rely on the real one.
-        
+
         # Let's perform a search for text we know exists in the mock/fixture
         # Fixture usually creates chunk 1 with "first chunk text", chunk 2 with "second chunk text"
         # Since we use LLM/LMStudio directly, let's just make sure there is no fatal error when searching.
-        
+
         # The user rules explicitly state: "Do not use any mocks. Do not monkeypatch anything."
         # We'll just call the API directly.
         response = client.get("/search/?query=test%20query")
-        
+
         assert response.status_code == 200
         data = response.json()
-        
+
         # we can't be strictly sure it returns something depending on the similarity threshold/LMStudio,
         # but we know the result is a parseable list.
         assert isinstance(data, list)
-        
+
         if len(data) > 0:
             parsed = SemanticSearchOut(**data[0])
             assert parsed.document is not None
             assert parsed.distance is not None
             assert parsed.resource_id is not None
             assert parsed.chunk_order is not None
-
-

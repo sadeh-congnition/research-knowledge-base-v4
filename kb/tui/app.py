@@ -29,7 +29,9 @@ class ChatMessage(Static):
 class ResourceChatScreen(Container):
     """Chat interface for chatting with a resource."""
 
-    def __init__(self, resource_id: int, resource_url: str, chat_id: int | None = None) -> None:
+    def __init__(
+        self, resource_id: int, resource_url: str, chat_id: int | None = None
+    ) -> None:
         super().__init__()
         self.resource_id = resource_id
         self.resource_url = resource_url
@@ -44,9 +46,11 @@ class ResourceChatScreen(Container):
         """Load history for an existing chat."""
         messages_container = self.query_one("#chat-messages", VerticalScroll)
         messages_container.mount(ChatMessage("Loading history...", is_user=False))
-        
+
         try:
-            response = httpx.get(f"{BASE_URL}/chat/{self.chat_id}/messages/", timeout=10.0)
+            response = httpx.get(
+                f"{BASE_URL}/chat/{self.chat_id}/messages/", timeout=10.0
+            )
             messages_container.remove_children()
             if response.status_code == 200:
                 messages = response.json()
@@ -57,10 +61,16 @@ class ResourceChatScreen(Container):
                     messages_container.mount(ChatMessage(msg["text"], is_user=is_user))
                 messages_container.scroll_end()
             else:
-                messages_container.mount(ChatMessage(f"Error loading history: {response.text}", is_user=False))
+                messages_container.mount(
+                    ChatMessage(
+                        f"Error loading history: {response.text}", is_user=False
+                    )
+                )
         except Exception as e:
             logger.exception("Error loading chat history")
-            messages_container.mount(ChatMessage(f"Error loading history: {e}", is_user=False))
+            messages_container.mount(
+                ChatMessage(f"Error loading history: {e}", is_user=False)
+            )
 
     def compose(self) -> ComposeResult:
         yield Label(
@@ -96,9 +106,7 @@ class ResourceChatScreen(Container):
             if response.status_code == 200:
                 data = response.json()
                 self.chat_id = data["chat_id"]
-                messages_container.mount(
-                    ChatMessage(data["ai_message"], is_user=False)
-                )
+                messages_container.mount(ChatMessage(data["ai_message"], is_user=False))
             else:
                 messages_container.mount(
                     ChatMessage(
@@ -123,15 +131,24 @@ class ResourceDetailsScreen(Container):
     def compose(self) -> ComposeResult:
         res_id = self.resource.get("id", "Unknown")
         url = self.resource.get("url", "Unknown")
-        
-        yield Label(f"[bold]Resource Details (ID: {res_id})[/bold] | {url}", classes="details-header")
+
+        yield Label(
+            f"[bold]Resource Details (ID: {res_id})[/bold] | {url}",
+            classes="details-header",
+        )
         yield Horizontal(
             VerticalScroll(
-                Label("[bold]Extracted Text[/bold]\n\n" + self.resource.get("extracted_text", "No text available.")),
+                Label(
+                    "[bold]Extracted Text[/bold]\n\n"
+                    + self.resource.get("extracted_text", "No text available.")
+                ),
                 id="details-left",
             ),
             VerticalScroll(
-                Label("[bold]Summary[/bold]\n\n" + self.resource.get("summary", "No summary available.")),
+                Label(
+                    "[bold]Summary[/bold]\n\n"
+                    + self.resource.get("summary", "No summary available.")
+                ),
                 id="details-right",
             ),
             id="details-container",
@@ -143,6 +160,7 @@ class SemanticSearchScreen(Container):
 
     def compose(self) -> ComposeResult:
         from textual.widgets import DataTable
+
         yield Label("[bold]Semantic Search[/bold]", classes="details-header")
         yield Input(placeholder="Type to search...", id="semantic-search-input")
         table = DataTable(id="semantic-search-results", cursor_type="row")
@@ -153,11 +171,18 @@ class SemanticSearchScreen(Container):
         """Handle character changes for live search."""
         if event.input.id != "semantic-search-input":
             return
-            
+
         query = event.value.strip()
-        table = self.query_one("#semantic-search-results", getattr(self.app.__module__, 'DataTable', __import__('textual.widgets').widgets.DataTable))
+        table = self.query_one(
+            "#semantic-search-results",
+            getattr(
+                self.app.__module__,
+                "DataTable",
+                __import__("textual.widgets").widgets.DataTable,
+            ),
+        )
         table.clear()
-        
+
         if not query:
             return
 
@@ -166,24 +191,24 @@ class SemanticSearchScreen(Container):
                 response = await client.get(
                     f"{BASE_URL}/search/",
                     params={"query": query, "n_results": 10},
-                    timeout=30.0
+                    timeout=30.0,
                 )
             if response.status_code == 200:
                 results = response.json()
                 for res in results:
                     score_str = f"{res['distance']:.4f}"
                     # Truncate text for display
-                    text = res['document'].replace('\n', ' ')
+                    text = res["document"].replace("\n", " ")
                     if len(text) > 80:
                         text = text[:77] + "..."
                     table.add_row(
-                        score_str, 
-                        str(res['resource_id']), 
-                        str(res['chunk_order']), 
+                        score_str,
+                        str(res["resource_id"]),
+                        str(res["chunk_order"]),
                         text,
-                        key=f"res_{res['resource_id']}_chunk_{res['chunk_order']}"
+                        key=f"res_{res['resource_id']}_chunk_{res['chunk_order']}",
                     )
-        except Exception as e:
+        except Exception:
             logger.exception("Search API error")
 
 
@@ -316,12 +341,14 @@ class ResearchKBApp(App):
             response = httpx.get(f"{BASE_URL}/text-extraction-configs/", timeout=10.0)
             if response.status_code == 200:
                 configs = response.json()
-                jina_config = next((c for c in configs if c["title"] == "JINA AI API"), None)
+                jina_config = next(
+                    (c for c in configs if c["title"] == "JINA AI API"), None
+                )
                 if jina_config:
                     # Check if secret exists
                     secret_response = httpx.get(
                         f"{BASE_URL}/text-extraction-configs/{jina_config['id']}/secret/",
-                        timeout=10.0
+                        timeout=10.0,
                     )
                     if secret_response.status_code == 404:
                         self.notify(
@@ -330,7 +357,9 @@ class ResearchKBApp(App):
                             timeout=10.0,
                         )
         except Exception as e:
-            logger.exception("Could not connect to backend to check Text Extraction configs")
+            logger.exception(
+                "Could not connect to backend to check Text Extraction configs"
+            )
             self.notify(
                 f"Could not connect to backend to check Text Extraction configs: {e}",
                 severity="error",
@@ -410,12 +439,12 @@ class ResearchKBApp(App):
     def action_escape(self) -> None:
         """Handle the escape key to return to the main view."""
         container = self.query_one("#main-container", Container)
-        
+
         # Check if we are currently in form, chat, etc.
         # Welcome view contains #welcome
         if not container.query("#welcome"):
             self._show_welcome()
-            
+
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle command input and form submissions."""
         input_id = event.input.id
@@ -605,7 +634,7 @@ class ResearchKBApp(App):
                 container.remove_children()
                 details_screen = ResourceDetailsScreen(resource)
                 container.mount(details_screen)
-                
+
                 # focus the container to allow scrolling immediately
                 self.call_after_refresh(lambda: container.focus())
             elif response.status_code == 404:
@@ -627,16 +656,18 @@ class ResearchKBApp(App):
             if response.status_code == 200:
                 chats = response.json()
                 if not chats:
-                    self._show_message("No chats found. Use 'chat <resource_id>' to start one.")
+                    self._show_message(
+                        "No chats found. Use 'chat <resource_id>' to start one."
+                    )
                     return
 
                 lines = ["[bold]Existing Chats:[/bold]\n"]
                 for c in chats:
                     # Truncate last message for display
-                    last_msg = c['last_message'].replace('\n', ' ')
+                    last_msg = c["last_message"].replace("\n", " ")
                     if len(last_msg) > 50:
                         last_msg = last_msg[:47] + "..."
-                    
+
                     lines.append(
                         f"  [bold]ID: {c['id']}[/bold] | Res ID: {c['resource_id']} | {c['resource_url']}\n"
                         f"    [italic]{last_msg}[/italic]"
@@ -686,9 +717,7 @@ class ResearchKBApp(App):
 
         # Get resource details
         try:
-            response = httpx.get(
-                f"{BASE_URL}/resources/{resource_id}/", timeout=10.0
-            )
+            response = httpx.get(f"{BASE_URL}/resources/{resource_id}/", timeout=10.0)
             if response.status_code == 200:
                 self.query_one("#command-input", Input).display = False
                 resource = response.json()
@@ -711,8 +740,9 @@ class ResearchKBApp(App):
         except Exception as e:
             logger.exception("An error occurred")
             self._show_message(f"[red]Error: {e}[/red]")
+
     # ---- Continue Chat ----
-    
+
     def _continue_chat(self, chat_id_str: str) -> None:
         if not chat_id_str:
             self._show_message(
@@ -781,14 +811,16 @@ class ResearchKBApp(App):
         self.query_one("#command-input", Input).display = False
         container = self.query_one("#main-container", Container)
         container.remove_children()
-        
+
         # Check if LLM / Embedding is configured for search
         try:
             response = httpx.get(f"{BASE_URL}/embedding-configs/status/", timeout=10.0)
             if response.status_code == 200:
                 data = response.json()
                 if not data["is_valid"]:
-                    self._show_message(f"[red]Cannot perform semantic search: {data['message']}[/red]")
+                    self._show_message(
+                        f"[red]Cannot perform semantic search: {data['message']}[/red]"
+                    )
                     return
         except Exception as e:
             logger.exception("Error checking embedding config before search")
@@ -797,9 +829,11 @@ class ResearchKBApp(App):
 
         search_screen = SemanticSearchScreen()
         container.mount(search_screen)
-        
+
         # Focus the search input field
-        self.call_after_refresh(lambda: self.query_one("#semantic-search-input", Input).focus())
+        self.call_after_refresh(
+            lambda: self.query_one("#semantic-search-input", Input).focus()
+        )
 
     # ---- LLM Configs ----
 
@@ -827,10 +861,14 @@ class ResearchKBApp(App):
         container.mount(
             Container(
                 Label(configs_info),
-                Label("\n[bold]Setup Default LLM[/bold]\n[italic]This LLM will be used for all chats by default.\nYou can later use different models for different purposes.[/italic]"),
+                Label(
+                    "\n[bold]Setup Default LLM[/bold]\n[italic]This LLM will be used for all chats by default.\nYou can later use different models for different purposes.[/italic]"
+                ),
                 Label("Provider (e.g. openai, ollama, groq, openrouter):"),
                 Input(placeholder="openai", id="llm-provider"),
-                Label("Model name (e.g. groq/llama-3.1-8b-instant, ollama_chat/qwen3:4b, lm_studio/<model_name>, openai/gpt-4o):\nFor more info see: https://docs.litellm.ai/docs/#basic-usage"),
+                Label(
+                    "Model name (e.g. groq/llama-3.1-8b-instant, ollama_chat/qwen3:4b, lm_studio/<model_name>, openai/gpt-4o):\nFor more info see: https://docs.litellm.ai/docs/#basic-usage"
+                ),
                 Input(placeholder="ollama_chat/qwen3:4b", id="llm-model"),
                 Label("API Key (optional):"),
                 Input(placeholder="sk-...", id="llm-api-key", password=True),
@@ -852,7 +890,9 @@ class ResearchKBApp(App):
             self._show_message("[red]Model name is required.[/red]")
             return
 
-        self._show_message("[yellow]Please wait while I test the LLM connection!...[/yellow]")
+        self._show_message(
+            "[yellow]Please wait while I test the LLM connection!...[/yellow]"
+        )
 
         try:
             from kb.schemas import DefaultLLMConfigIn
@@ -879,7 +919,7 @@ class ResearchKBApp(App):
                     f"Default: {data['is_default']}\n"
                     f"Test Response: {test_output}",
                     title="Success",
-                    severity="information"
+                    severity="information",
                 )
                 self._show_welcome()
             else:
@@ -915,11 +955,13 @@ class ResearchKBApp(App):
                 if jina_config_id is not None:
                     sec_response = httpx.get(
                         f"{BASE_URL}/text-extraction-configs/{jina_config_id}/secret/",
-                        timeout=10.0
+                        timeout=10.0,
                     )
                     if sec_response.status_code == 200:
                         jina_configured = True
-                        configs_info += "\n[green]JINA AI API Key is configured.[/green]\n"
+                        configs_info += (
+                            "\n[green]JINA AI API Key is configured.[/green]\n"
+                        )
 
         except Exception:
             logger.exception("Could not fetch configurations")
@@ -932,12 +974,15 @@ class ResearchKBApp(App):
                 Container(
                     Label(configs_info),
                     Label("\n[bold]Configure JINA AI API[/bold]"),
-                    Label("Please provide your API key. Get a free API key at: https://jina.ai/reader/"),
+                    Label(
+                        "Please provide your API key. Get a free API key at: https://jina.ai/reader/"
+                    ),
                     Input(placeholder="jina_...", id="jina-api-key", password=True),
                     Label("Press Enter on API Key field to submit"),
                     classes="form-container",
                 )
             )
+
             # Focus
             def _focus_input():
                 try:
@@ -945,13 +990,16 @@ class ResearchKBApp(App):
                 except Exception:
                     logger.exception("Error focusing Jina API key input")
                     pass
+
             self.call_after_refresh(_focus_input)
         else:
             container.mount(
                 Container(
                     Label(configs_info),
-                    Label("\n[italic]All configurations are set. Press Escape to return.[/italic]"),
-                    classes="form-container"
+                    Label(
+                        "\n[italic]All configurations are set. Press Escape to return.[/italic]"
+                    ),
+                    classes="form-container",
                 )
             )
 
@@ -969,6 +1017,7 @@ class ResearchKBApp(App):
                 return
 
             from kb.schemas import SecretIn
+
             payload = SecretIn(title="JINA_API_KEY", value=api_key)
 
             response = httpx.post(
@@ -980,7 +1029,7 @@ class ResearchKBApp(App):
                 self.notify(
                     "JINA AI API Key configured successfully!",
                     title="Success",
-                    severity="information"
+                    severity="information",
                 )
                 self._show_welcome()
             else:
@@ -989,4 +1038,3 @@ class ResearchKBApp(App):
         except Exception as e:
             logger.exception("An error occurred")
             self._show_message(f"[red]Error: {e}[/red]")
-

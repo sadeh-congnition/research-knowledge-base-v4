@@ -25,3 +25,8 @@ dependencies = [
 
 [tool.uv.sources]
 django-llm-chat = { git = "https://github.com/sadeh-congnition/django-llm-chat.git" }
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.5",
+]

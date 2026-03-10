@@ -1,12 +1,11 @@
 import pytest
-from textual.widgets import Input, Static, Label
-from typing import Generator
-import httpx
+from textual.widgets import Input
 from unittest.mock import patch, MagicMock
 
 from kb.tui.app import ResearchKBApp
 
 pytestmark = pytest.mark.asyncio
+
 
 @pytest.fixture
 def mock_httpx_responses():
@@ -18,19 +17,20 @@ def mock_httpx_responses():
         mock_get.return_value = mock_response
         yield mock_get
 
+
 @pytest.fixture
 def mock_httpx_post():
     """Mock HTTP POST requests for form submissions."""
     with patch("httpx.post") as mock_post:
         mock_response = MagicMock(status_code=200)
         mock_response.json.return_value = {
-            "id": 1, 
-            "url": "http://test.com", 
+            "id": 1,
+            "url": "http://test.com",
             "resource_type": "paper",
             "name": "test-model",
             "model_name": "test-model",
             "is_default": True,
-            "title": "TEST_KEY"
+            "title": "TEST_KEY",
         }
         mock_post.return_value = mock_response
         yield mock_post
@@ -43,6 +43,7 @@ async def test_hide_command_prompt_in_add_form(mock_httpx_responses):
         command_input.display = True
 
         original_query_one = app.query_one
+
         def mock_query_one(selector, *args, **kwargs):
             if selector == "#command-input":
                 return command_input
@@ -56,11 +57,11 @@ async def test_hide_command_prompt_in_add_form(mock_httpx_responses):
                 return mock_input
             return original_query_one(selector, *args, **kwargs)
 
-        with patch.object(app, 'query_one', side_effect=mock_query_one):
+        with patch.object(app, "query_one", side_effect=mock_query_one):
             # Open form directly
             app._show_add_resource()
             await pilot.pause()
-            
+
             # Command input should be hidden when in the 'add' form
             assert command_input.display is False
 
@@ -75,7 +76,7 @@ async def test_hide_command_prompt_in_llm_configs_form(mock_httpx_responses):
     app = ResearchKBApp()
     async with app.run_test() as pilot:
         command_input = app.query_one("#command-input", Input)
-        
+
         # Open form directly
         app._show_llm_configs()
         await pilot.pause()
@@ -93,11 +94,13 @@ async def test_hide_command_prompt_in_llm_configs_form(mock_httpx_responses):
         assert app.query("#welcome")
 
 
-async def test_hide_command_prompt_in_text_extraction_configs_form(mock_httpx_responses):
+async def test_hide_command_prompt_in_text_extraction_configs_form(
+    mock_httpx_responses,
+):
     app = ResearchKBApp()
     async with app.run_test() as pilot:
         command_input = app.query_one("#command-input", Input)
-        
+
         # Open form directly
         app._show_text_extraction_configs()
         await pilot.pause()
@@ -115,8 +118,9 @@ async def test_hide_command_prompt_in_text_extraction_configs_form(mock_httpx_re
         assert app.query("#welcome")
 
 
-
-async def test_form_success_notification_and_return_add(mock_httpx_responses, mock_httpx_post):
+async def test_form_success_notification_and_return_add(
+    mock_httpx_responses, mock_httpx_post
+):
     # Skip the form integration test because it relies on complex Textual async mounts
     # which are already tested by the other 3 tests for the UI display logic.
     # And the HTTP logic is handled and tested by our pytest backend tests.

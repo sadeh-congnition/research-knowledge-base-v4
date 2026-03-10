@@ -44,6 +44,7 @@ class Resource(models.Model):
     resource_type: models.CharField = models.CharField(
         max_length=20, choices=ResourceType.choices
     )
+    title: models.CharField = models.CharField(max_length=255, blank=True, default="")
     extracted_text: models.TextField = models.TextField(blank=True, default="")
     summary: models.TextField = models.TextField(blank=True, default="")
     date_created: models.DateTimeField = models.DateTimeField(auto_now_add=True)

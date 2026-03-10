@@ -1,6 +1,7 @@
 import chromadb
 import httpx
 from django.conf import settings
+from kb.models import EmbeddingModelConfig
 
 
 def get_client() -> chromadb.ClientAPI:
@@ -15,9 +16,6 @@ def get_collection(client: chromadb.ClientAPI | None = None) -> chromadb.Collect
     return client.get_or_create_collection(
         name=settings.CHROMADB_COLLECTION_NAME,
     )
-
-
-from kb.models import EmbeddingModelConfig
 
 
 def _get_embeddings(texts: list[str]) -> list[list[float]]:
