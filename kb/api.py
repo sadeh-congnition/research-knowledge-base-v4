@@ -31,6 +31,7 @@ from kb.schemas import (
     DefaultLLMConfigIn,
     EmbeddingStatusOut,
     SemanticSearchOut,
+    SearchContextOut,
 )
 from kb.services import chat as chat_service
 from kb.services import chromadb_service
@@ -419,6 +420,35 @@ def search_chunks(request, query: str, n_results: int = 5) -> list[dict]:
         return api.create_response(
             request, {"error": f"Search failed: {e}"}, status=500
         )
+
+
+@search_router.get(
+    "/{resource_id}/context/{chunk_order}/", response=SearchContextOut
+)
+def get_search_context(request, resource_id: int, chunk_order: int) -> dict:
+    """Retrieve the target chunk and 3 chunks before/after for context."""
+    resource = get_object_or_404(Resource, id=resource_id)
+
+    # Calculate range
+    start_order = max(0, chunk_order - 3)
+    end_order = chunk_order + 3
+
+    # Query chunks
+    chunks = Chunk.objects.filter(
+        resource=resource, order__gte=start_order, order__lte=end_order
+    ).order_by("order")
+
+    formatted_chunks = []
+    for chunk in chunks:
+        formatted_chunks.append(
+            {
+                "text": chunk.text,
+                "order": chunk.order,
+                "is_target": chunk.order == chunk_order,
+            }
+        )
+
+    return {"chunks": formatted_chunks}
 
 
 api.add_router("/search", search_router)

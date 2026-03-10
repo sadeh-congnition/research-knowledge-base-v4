@@ -14,7 +14,7 @@ from events.models import (
     EventDescriptions,
 )
 from events.services import fire_event
-from kb.models import Resource
+from kb.models import Resource, Reference
 from kb.services import llm as llm_service
 from kb.services import chat as chat_service
 
@@ -392,6 +392,88 @@ def consume_extract_title_of_resource() -> int:
     return count
 
 
+def consume_extract_references() -> int:
+    """
+    Consumer that processes "extracted text clean up finished" events.
+    It extracts references mentioned in the resource's extracted text using an LLM.
+    """
+    logger.info("Running consumer: Extract references")
+    consumer = get_or_create_consumer("Extract references")
+
+    unprocessed_events = (
+        Event.objects.filter(
+            entity=EntityTypes.RESOURCE, description=EventDescriptions.CLEAN_UP_FINISHED
+        )
+        .exclude(eventconsumed__consumer=consumer)
+        .order_by("id")
+    )
+
+    count = 0
+    for event in unprocessed_events:
+        logger.info(
+            f"Consumer 'Extract references' found event {event.id}. Starting processing..."
+        )
+        with transaction.atomic():
+            try:
+                resource = get_object_or_404(Resource, id=event.entity_id)
+                logger.info(
+                    f"Calling LLM to extract references for Resource {resource.id}..."
+                )
+
+                model_name = _get_llm_config()
+
+                system_prompt = (
+                    "Extract all references, citations, or mentions of other works, papers, "
+                    "or resources from the following text. "
+                    "For each reference, provide a clear description. "
+                    "Format the output as a bulleted list with each reference on a new line. "
+                    "Do not include any other text in your response."
+                )
+
+                if os.environ.get("PYTEST_CURRENT_TEST"):
+                    references = [f"MOCKED REFERENCE: {resource.extracted_text[:20]}"]
+                else:
+                    try:
+                        with transaction.atomic():
+                            chat_instance = _create_chat_safely()
+                            user = _get_or_create_consumer_user()
+                            chat_instance.create_system_message(system_prompt, user)
+
+                            ai_msg, _, _ = chat_instance.send_user_msg_to_llm(
+                                model_name=model_name,
+                                text=resource.extracted_text,
+                                user=user,
+                            )
+                            llm_output = ai_msg.text or ""
+                            # Split by newline and remove bullets
+                            references = [
+                                line.strip().lstrip("-* ").strip()
+                                for line in llm_output.split("\n")
+                                if line.strip()
+                            ]
+                    except Exception as e:
+                        logger.error(f"Error calling LLM for references: {e}")
+                        references = []
+
+                # Create Reference objects
+                for ref_desc in references:
+                    Reference.objects.create(resource=resource, description=ref_desc)
+
+                EventConsumed.objects.create(event=event, consumer=consumer)
+
+                count += 1
+                logger.info(
+                    f"Consumed 'clean up finished' event {event.id} for Resource {resource.id} (extracted {len(references)} references)"
+                )
+            except Exception as e:
+                logger.exception(
+                    f"Failed to process extract references for event {event.id}: {e}"
+                )
+        break
+    logger.info(f"Finished consumer 'Extract references', processed {count} events")
+    return count
+
+
 def process_all_events() -> int:
     """Helper to process all consumers."""
     count = 0
@@ -399,4 +481,5 @@ def process_all_events() -> int:
     count += consume_summarize()
     count += consume_chunk_and_embed()
     count += consume_extract_title_of_resource()
+    count += consume_extract_references()
     return count

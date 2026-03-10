@@ -9,6 +9,7 @@ from textual.widgets import (
     Input,
     Label,
     Static,
+    DataTable,
 )
 
 import httpx
@@ -133,6 +134,16 @@ class ResourceDetailsScreen(Container):
         url = self.resource.get("url", "Unknown")
         title = self.resource.get("title", "No Title")
 
+        # Prepare references text
+        references = self.resource.get("references", [])
+        if references:
+            ref_lines = ["[bold]References[/bold]\n"]
+            for ref in references:
+                ref_lines.append(f"• {ref['description']}")
+            references_text = "\n".join(ref_lines)
+        else:
+            references_text = "[bold]References[/bold]\n\nNo references extracted."
+
         yield Label(
             f"[bold]Resource Details (ID: {res_id})[/bold] | {title}\n{url}",
             classes="details-header",
@@ -150,6 +161,7 @@ class ResourceDetailsScreen(Container):
                     "[bold]Summary[/bold]\n\n"
                     + self.resource.get("summary", "No summary available.")
                 ),
+                Label("\n" + references_text),
                 id="details-right",
             ),
             id="details-container",
@@ -160,13 +172,26 @@ class SemanticSearchScreen(Container):
     """Screen for semantic search against chunks."""
 
     def compose(self) -> ComposeResult:
-        from textual.widgets import DataTable
-
         yield Label("[bold]Semantic Search[/bold]", classes="details-header")
         yield Input(placeholder="Type to search...", id="semantic-search-input")
-        table = DataTable(id="semantic-search-results", cursor_type="row")
-        table.add_columns("Score", "Resource ID", "Chunk Order", "Text")
-        yield table
+        yield Horizontal(
+            VerticalScroll(
+                DataTable(id="semantic-search-results", cursor_type="row"),
+                id="search-left",
+            ),
+            VerticalScroll(
+                Static(
+                    "[italic]Select a result to see context...[/italic]",
+                    id="search-context-view",
+                ),
+                id="search-right",
+            ),
+            id="search-split-container",
+        )
+
+    def on_mount(self) -> None:
+        table = self.query_one("#semantic-search-results", DataTable)
+        table.add_columns("Score", "Res ID", "Order", "Text")
 
     async def on_input_changed(self, event: Input.Changed) -> None:
         """Handle character changes for live search."""
@@ -176,11 +201,7 @@ class SemanticSearchScreen(Container):
         query = event.value.strip()
         table = self.query_one(
             "#semantic-search-results",
-            getattr(
-                self.app.__module__,
-                "DataTable",
-                __import__("textual.widgets").widgets.DataTable,
-            ),
+            DataTable,
         )
         table.clear()
 
@@ -200,8 +221,8 @@ class SemanticSearchScreen(Container):
                     score_str = f"{res['distance']:.4f}"
                     # Truncate text for display
                     text = res["document"].replace("\n", " ")
-                    if len(text) > 80:
-                        text = text[:77] + "..."
+                    if len(text) > 50:
+                        text = text[:47] + "..."
                     table.add_row(
                         score_str,
                         str(res["resource_id"]),
@@ -211,6 +232,45 @@ class SemanticSearchScreen(Container):
                     )
         except Exception:
             logger.exception("Search API error")
+
+    async def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Handle row selection to show context."""
+        row_key = event.row_key.value
+        if not row_key or not row_key.startswith("res_"):
+            return
+
+        # Parse res_{id}_chunk_{order}
+        parts = row_key.split("_")
+        res_id = int(parts[1])
+        chunk_order = int(parts[3])
+
+        context_view = self.query_one("#search-context-view", Static)
+        context_view.update("[yellow]Loading context...[/yellow]")
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{BASE_URL}/search/{res_id}/context/{chunk_order}/",
+                    timeout=10.0,
+                )
+            if response.status_code == 200:
+                data = response.json()
+                content = ["[bold]In Context[/bold]\n"]
+                for chunk in data["chunks"]:
+                    chunk_text = chunk["text"].strip()
+                    if chunk["is_target"]:
+                        # Highlight the target chunk
+                        content.append(f"[reverse][bold]{chunk_text}[/bold][/reverse]")
+                    else:
+                        content.append(chunk_text)
+                    content.append("\n" + "-" * 20 + "\n")
+
+                context_view.update("\n".join(content))
+            else:
+                context_view.update(f"[red]Error loading context: {response.text}[/red]")
+        except Exception:
+            logger.exception("Context API error")
+            context_view.update("[red]Error loading context. Check logs.[/red]")
 
 
 class ResearchKBApp(App):
@@ -318,7 +378,27 @@ class ResearchKBApp(App):
     
     #semantic-search-results {
         height: 1fr;
+    }
+
+    #search-split-container {
+        height: 1fr;
         margin: 0 1 1 1;
+    }
+
+    #search-left {
+        width: 1fr;
+        height: 1fr;
+        border-right: solid $accent;
+    }
+
+    #search-right {
+        width: 1fr;
+        height: 1fr;
+        padding: 1;
+    }
+
+    #search-context-view {
+        width: 100%;
     }
     """
 

@@ -27,6 +27,12 @@ class ResourceIn(Schema):
     resource_type: str  # "paper" or "blog_post"
 
 
+class ReferenceOut(Schema):
+    id: int
+    description: str
+    date_created: datetime
+
+
 class ResourceOut(Schema):
     id: int
     url: str
@@ -34,6 +40,7 @@ class ResourceOut(Schema):
     resource_type: str
     extracted_text: str
     summary: str
+    references: list[ReferenceOut]
     date_created: datetime
 
 
@@ -153,3 +160,13 @@ class SemanticSearchOut(Schema):
     distance: float
     resource_id: int
     chunk_order: int
+
+
+class ChunkContextOut(Schema):
+    text: str
+    order: int
+    is_target: bool
+
+
+class SearchContextOut(Schema):
+    chunks: list[ChunkContextOut]

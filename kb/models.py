@@ -141,3 +141,17 @@ class ResourceChat(models.Model):
 
     def __str__(self) -> str:
         return f"Chat {self.chat_id} for Resource {self.resource_id}"
+
+
+class Reference(models.Model):
+    resource = models.ForeignKey(
+        Resource, on_delete=models.CASCADE, related_name="references"
+    )
+    description = models.TextField()
+    date_created = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date_created"]
+
+    def __str__(self) -> str:
+        return f"Reference for Resource {self.resource_id}"
