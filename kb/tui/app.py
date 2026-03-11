@@ -50,7 +50,7 @@ class ResourceChatScreen(Container):
 
         try:
             response = httpx.get(
-                f"{BASE_URL}/chat/{self.chat_id}/messages/", timeout=10.0
+                f"{BASE_URL}/chat/{self.chat_id}/messages/", timeout=5.0
             )
             messages_container.remove_children()
             if response.status_code == 200:
@@ -102,7 +102,7 @@ class ResourceChatScreen(Container):
             response = httpx.post(
                 f"{BASE_URL}/chat/",
                 json=payload.dict(),
-                timeout=120.0,
+                timeout=5.0,
             )
             if response.status_code == 200:
                 data = response.json()
@@ -213,7 +213,7 @@ class SemanticSearchScreen(Container):
                 response = await client.get(
                     f"{BASE_URL}/search/",
                     params={"query": query, "n_results": 10},
-                    timeout=30.0,
+                    timeout=5.0,
                 )
             if response.status_code == 200:
                 results = response.json()
@@ -267,7 +267,9 @@ class SemanticSearchScreen(Container):
 
                 context_view.update("\n".join(content))
             else:
-                context_view.update(f"[red]Error loading context: {response.text}[/red]")
+                context_view.update(
+                    f"[red]Error loading context: {response.text}[/red]"
+                )
         except Exception:
             logger.exception("Context API error")
             context_view.update("[red]Error loading context. Check logs.[/red]")
@@ -413,7 +415,9 @@ class ResearchKBApp(App):
         """Called when the app is mounted."""
         command_input = self.query_one("#command-input", Input)
         command_input.display = False
-        self._show_message("[bold]Running system checks...[/bold]\nConnecting to backend server...")
+        self._show_message(
+            "[bold]Running system checks...[/bold]\nConnecting to backend server..."
+        )
         self.set_timer(0.1, self._run_startup_checks)
 
     def _run_startup_checks(self) -> None:
@@ -423,7 +427,7 @@ class ResearchKBApp(App):
         self._check_default_llm()
         self._check_jina_api_key()
         self._check_embedding_model()
-        
+
         try:
             container = self.query_one("#main-container", Container)
             if container.query("#welcome"):
@@ -439,7 +443,10 @@ class ResearchKBApp(App):
             httpx.get(f"{BASE_URL}/", timeout=1.0)
             return True
         except httpx.RequestError:
-            self.exit(message="Error: Backend server is not running on localhost:8001.", return_code=1)
+            self.exit(
+                message="Error: Backend server is not running on localhost:8001.",
+                return_code=1,
+            )
             return False
 
     def _check_jina_api_key(self) -> None:
@@ -673,7 +680,7 @@ class ResearchKBApp(App):
             response = httpx.post(
                 f"{BASE_URL}/resources/",
                 json=payload.dict(),
-                timeout=120.0,
+                timeout=5.0,
             )
             if response.status_code == 200:
                 data = response.json()
@@ -698,7 +705,7 @@ class ResearchKBApp(App):
 
     def _list_resources(self) -> None:
         try:
-            response = httpx.get(f"{BASE_URL}/resources/", timeout=30.0)
+            response = httpx.get(f"{BASE_URL}/resources/", timeout=5.0)
             if response.status_code == 200:
                 resources = response.json()
                 if not resources:
@@ -762,7 +769,7 @@ class ResearchKBApp(App):
 
     def _list_chats(self) -> None:
         try:
-            response = httpx.get(f"{BASE_URL}/chat/", timeout=30.0)
+            response = httpx.get(f"{BASE_URL}/chat/", timeout=5.0)
             if response.status_code == 200:
                 chats = response.json()
                 if not chats:
@@ -1017,7 +1024,7 @@ class ResearchKBApp(App):
                 response = await client.post(
                     f"{BASE_URL}/llm-configs/default/",
                     json=payload.dict(),
-                    timeout=30.0,
+                    timeout=5.0,
                 )
             if response.status_code == 200:
                 data = response.json()
