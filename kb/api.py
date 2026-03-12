@@ -1,3 +1,4 @@
+from django.http import StreamingHttpResponse
 from django.shortcuts import get_object_or_404
 from loguru import logger
 from ninja import NinjaAPI, Router
@@ -376,6 +377,45 @@ def send_chat_message(request, payload: ChatMessageIn) -> dict:
     }
 
 
+@chat_router.post("/stream/")
+def stream_chat_message(request, payload: ChatMessageIn):
+    """Send a message and stream the response."""
+    # Get LLM config
+    if payload.llm_config_id:
+        llm_config = get_object_or_404(LLMConfig, id=payload.llm_config_id)
+    else:
+        llm_config = chat_service.get_default_llm_config()
+        if llm_config is None:
+            return api.create_response(
+                request,
+                {"error": "No default LLM config found. Please configure one first."},
+                status=400,
+            )
+
+    def event_stream():
+        if payload.chat_id:
+            chunks = chat_service.stream_continue_chat(
+                chat_id=payload.chat_id,
+                user_message=payload.message,
+                llm_config=llm_config,
+            )
+        elif payload.resource_id:
+            resource = get_object_or_404(Resource, id=payload.resource_id)
+            chunks = chat_service.stream_chat_with_resource(
+                resource=resource,
+                user_message=payload.message,
+                llm_config=llm_config,
+            )
+        else:
+            yield '{"error": "Either resource_id or chat_id must be provided."}'
+            return
+
+        for chunk in chunks:
+            yield chunk
+
+    return StreamingHttpResponse(event_stream(), content_type="text/event-stream")
+
+
 @chat_router.get("/{chat_id}/messages/", response=list[ChatHistoryOut])
 def get_chat_history(request, chat_id: int) -> list[dict]:
     """Get all messages for a chat."""
@@ -422,9 +462,7 @@ def search_chunks(request, query: str, n_results: int = 5) -> list[dict]:
         )
 
 
-@search_router.get(
-    "/{resource_id}/context/{chunk_order}/", response=SearchContextOut
-)
+@search_router.get("/{resource_id}/context/{chunk_order}/", response=SearchContextOut)
 def get_search_context(request, resource_id: int, chunk_order: int) -> dict:
     """Retrieve the target chunk and 3 chunks before/after for context."""
     resource = get_object_or_404(Resource, id=resource_id)

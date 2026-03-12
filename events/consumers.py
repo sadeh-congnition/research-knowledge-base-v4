@@ -36,7 +36,7 @@ def _create_chat_safely():
                 llm_user = User.objects.get(username="litellm")
             except User.DoesNotExist:
                 llm_user, _ = User.objects.get_or_create(
-                    username="djllmchat-user", defaults={"password": "djllmchat-user"}
+                    username="litellm", defaults={"password": "litellm"}
                 )
 
             default_user, _ = User.objects.get_or_create(

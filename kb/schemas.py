@@ -148,6 +148,7 @@ class ChatListOut(Schema):
     resource_id: int
     resource_url: str
     resource_title: str
+    resource_summary: str
     last_message: str
     date_updated: datetime
 

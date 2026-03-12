@@ -22,20 +22,33 @@ class ChatMessage(Static):
     """A single chat message."""
 
     def __init__(self, text: str, is_user: bool = True) -> None:
-        prefix = "You" if is_user else "AI"
-        super().__init__(f"[bold]{prefix}:[/bold] {text}")
+        self.prefix = "You" if is_user else "AI"
+        self.message_text = text
+        super().__init__(f"[bold]{self.prefix}:[/bold] {text}")
         self.add_class("user-msg" if is_user else "ai-msg")
+
+    def update_text(self, text: str) -> None:
+        """Update the message text."""
+        self.message_text = text
+        self.update(f"[bold]{self.prefix}:[/bold] {self.message_text}")
 
 
 class ResourceChatScreen(Container):
     """Chat interface for chatting with a resource."""
 
     def __init__(
-        self, resource_id: int, resource_url: str, chat_id: int | None = None
+        self,
+        resource_id: int,
+        resource_url: str,
+        resource_title: str | None = None,
+        resource_summary: str | None = None,
+        chat_id: int | None = None,
     ) -> None:
         super().__init__()
         self.resource_id = resource_id
         self.resource_url = resource_url
+        self.resource_title = resource_title
+        self.resource_summary = resource_summary
         self.chat_id = chat_id
 
     def on_mount(self) -> None:
@@ -74,10 +87,21 @@ class ResourceChatScreen(Container):
             )
 
     def compose(self) -> ComposeResult:
+        title_display = (
+            f"{self.resource_title} ({self.resource_url})"
+            if self.resource_title
+            else self.resource_url
+        )
         yield Label(
-            f"[bold]Chatting with:[/bold] {self.resource_url}",
+            f"[bold]Chatting with:[/bold] {title_display}",
             id="chat-resource-label",
         )
+        if self.resource_summary:
+            with VerticalScroll(id="chat-resource-summary-container"):
+                yield Static(
+                    f"[italic]Summary:[/italic]\n{self.resource_summary}",
+                    id="chat-resource-summary",
+                )
         yield VerticalScroll(id="chat-messages")
         yield Input(placeholder="Type a message...", id="chat-input")
 
@@ -99,22 +123,35 @@ class ResourceChatScreen(Container):
                 chat_id=self.chat_id,
                 message=message,
             )
-            response = httpx.post(
-                f"{BASE_URL}/chat/",
+
+            # Create an empty AI message to stream into
+            ai_message_widget = ChatMessage("", is_user=False)
+            messages_container.mount(ai_message_widget)
+            messages_container.scroll_end()
+
+            full_response = ""
+            with httpx.stream(
+                "POST",
+                f"{BASE_URL}/chat/stream/",
                 json=payload.dict(),
-                timeout=5.0,
-            )
-            if response.status_code == 200:
-                data = response.json()
-                self.chat_id = data["chat_id"]
-                messages_container.mount(ChatMessage(data["ai_message"], is_user=False))
-            else:
-                messages_container.mount(
-                    ChatMessage(
-                        f"Error: {response.json().get('error', response.text)}",
-                        is_user=False,
-                    )
-                )
+                timeout=30.0,
+            ) as response:
+                if response.status_code == 200:
+                    for chunk in response.iter_text():
+                        if not chunk:
+                            continue
+
+                        # Handle special chat_id chunk
+                        if chunk.startswith("__CHAT_ID__:"):
+                            self.chat_id = int(chunk.split(":")[1])
+                            continue
+
+                        full_response += chunk
+                        ai_message_widget.update_text(full_response)
+                        messages_container.scroll_end()
+                else:
+                    error_text = response.read().decode()
+                    ai_message_widget.update_text(f"Error: {error_text}")
         except Exception as e:
             logger.exception("Error during chat message sending")
             messages_container.mount(ChatMessage(f"Error: {e}", is_user=False))
@@ -323,6 +360,18 @@ class ResearchKBApp(App):
         padding: 0 1;
         margin: 0 4 0 0;
         color: $success;
+    }
+
+    #chat-resource-summary-container {
+        height: auto;
+        max-height: 10;
+        padding: 0 1;
+        background: $surface;
+        border-bottom: solid $accent;
+    }
+
+    #chat-resource-summary {
+        color: $text-muted;
     }
 
     #status-bar {
@@ -842,7 +891,10 @@ class ResearchKBApp(App):
                 container = self.query_one("#main-container", Container)
                 container.remove_children()
                 chat_screen = ResourceChatScreen(
-                    resource_id=resource_id, resource_url=resource["url"]
+                    resource_id=resource_id,
+                    resource_url=resource["url"],
+                    resource_title=resource.get("title"),
+                    resource_summary=resource.get("summary"),
                 )
                 container.mount(chat_screen)
                 # Focus the chat input
@@ -906,6 +958,8 @@ class ResearchKBApp(App):
                     chat_screen = ResourceChatScreen(
                         resource_id=chat["resource_id"],
                         resource_url=chat["resource_url"],
+                        resource_title=chat.get("resource_title"),
+                        resource_summary=chat.get("resource_summary"),
                         chat_id=chat_id,
                     )
                     container.mount(chat_screen)

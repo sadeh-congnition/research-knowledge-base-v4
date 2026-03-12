@@ -1,3 +1,4 @@
+from typing import Iterable
 from django.contrib.auth import get_user_model
 
 from django_llm_chat.chat import Chat
@@ -83,6 +84,56 @@ def chat_with_resource(
     return ai_msg.text, chat_instance
 
 
+def stream_chat_with_resource(
+    resource: Resource,
+    user_message: str,
+    llm_config: LLMConfig,
+    chat_instance: Chat | None = None,
+) -> Iterable[str]:
+    """Send a message to chat with a resource's content and stream the response."""
+    user = _get_or_create_chat_user()
+
+    if chat_instance is None:
+        chat_instance = Chat.create()
+        # Set system message with resource context
+        system_prompt = (
+            f"You are a research assistant. The user is discussing a "
+            f"{resource.get_resource_type_display()} from: {resource.url}\n\n"
+            f"Here is the extracted content of the resource:\n\n"
+            f"{resource.extracted_text}\n\n"
+            f"Answer the user's questions based on this content. "
+            f"Be precise and cite relevant parts of the text when applicable."
+        )
+        chat_instance.create_system_message(system_prompt, user)
+
+        # Link Chat with Resource
+        ResourceChat.objects.create(
+            resource=resource,
+            chat_id=chat_instance.chat_db_model.id,
+        )
+
+    # Determine the model name
+    model_name = llm_config.model_name
+
+    # Set up LLM config and get (potentially) updated model name
+    api_key = llm_config.secret.value if llm_config.secret else None
+    model_name = llm_service.setup_llm_config(
+        model_name=llm_config.model_name,
+        provider=llm_config.provider,
+        api_key=api_key,
+    )
+
+    # Yield the chat_id first so the TUI knows which chat this belongs to
+    yield f"__CHAT_ID__:{chat_instance.chat_db_model.id}"
+
+    yield from chat_instance.stream_user_msg_to_llm(
+        model_name=model_name,
+        text=user_message,
+        user=user,
+        include_chat_history=True,
+    )
+
+
 def get_chat_messages(chat_id: int) -> list[dict]:
     """Get all messages for a chat.
 
@@ -133,6 +184,7 @@ def get_chat_list() -> list[dict]:
                 "resource_id": rc.resource.id,
                 "resource_url": rc.resource.url,
                 "resource_title": rc.resource.title,
+                "resource_summary": rc.resource.summary,
                 "last_message": last_msg.text if last_msg else "",
                 "date_updated": chat_model.date_updated,
             }
@@ -205,3 +257,43 @@ def continue_chat(
     )
 
     return ai_msg.text, chat_instance
+
+
+def stream_continue_chat(
+    chat_id: int,
+    user_message: str,
+    llm_config: LLMConfig,
+) -> Iterable[str]:
+    """Continue an existing chat and stream the response."""
+    user = _get_or_create_chat_user()
+    chat_db_model = ChatModel.objects.get(id=chat_id)
+
+    llm_user, _ = User.objects.get_or_create(
+        username="litellm", defaults={"password": "litellm"}
+    )
+
+    default_user, _ = User.objects.get_or_create(
+        username="djllmchat", defaults={"password": "djllmchat"}
+    )
+
+    chat_instance = Chat(
+        chat_db_model=chat_db_model,
+        llm_user=llm_user,
+        default_user=default_user,
+    )
+
+    # Determine the model name
+    model_name = llm_config.model_name
+    api_key = llm_config.secret.value if llm_config.secret else None
+    model_name = llm_service.setup_llm_config(
+        model_name=llm_config.model_name,
+        provider=llm_config.provider,
+        api_key=api_key,
+    )
+
+    yield from chat_instance.stream_user_msg_to_llm(
+        model_name=model_name,
+        text=user_message,
+        user=user,
+        include_chat_history=True,
+    )
