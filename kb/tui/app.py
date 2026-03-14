@@ -111,7 +111,7 @@ class ResourceChatScreen(Container):
         yield VerticalScroll(id="chat-messages")
         yield Input(placeholder="Type a message...", id="chat-input")
 
-    def on_input_submitted(self, event: Input.Submitted) -> None:
+    async def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle chat input submission."""
         message = event.value.strip()
         if not message:
@@ -136,28 +136,29 @@ class ResourceChatScreen(Container):
             messages_container.scroll_end()
 
             full_response = ""
-            with httpx.stream(
-                "POST",
-                f"{BASE_URL}/chat/stream/",
-                json=payload.dict(),
-                timeout=30.0,
-            ) as response:
-                if response.status_code == 200:
-                    for chunk in response.iter_text():
-                        if not chunk:
-                            continue
+            async with httpx.AsyncClient() as client:
+                async with client.stream(
+                    "POST",
+                    f"{BASE_URL}/chat/stream/",
+                    json=payload.dict(),
+                    timeout=30.0,
+                ) as response:
+                    if response.status_code == 200:
+                        async for chunk in response.aiter_text():
+                            if not chunk:
+                                continue
 
-                        # Handle special chat_id chunk
-                        if chunk.startswith("__CHAT_ID__:"):
-                            self.chat_id = int(chunk.split(":")[1])
-                            continue
+                            # Handle special chat_id chunk
+                            if chunk.startswith("__CHAT_ID__:"):
+                                self.chat_id = int(chunk.split(":")[1])
+                                continue
 
-                        full_response += chunk
-                        ai_message_widget.update_text(full_response)
-                        messages_container.scroll_end()
-                else:
-                    error_text = response.read().decode()
-                    ai_message_widget.update_text(f"Error: {error_text}")
+                            full_response += chunk
+                            ai_message_widget.update_text(full_response)
+                            messages_container.scroll_end()
+                    else:
+                        error_text = await response.aread()
+                        ai_message_widget.update_text(f"Error: {error_text.decode()}")
         except Exception as e:
             logger.exception("Error during chat message sending")
             messages_container.mount(ChatMessage(f"Error: {e}", is_user=False))
@@ -639,7 +640,7 @@ class ResearchKBApp(App):
 
         # Route form submissions
         if input_id == "add-type":
-            self._handle_add_resource()
+            await self._handle_add_resource()
             return
         elif input_id == "llm-api-key":
             await self._handle_llm_configs()
@@ -734,7 +735,7 @@ class ResearchKBApp(App):
         type_input = self.query_one("#add-type", Input)
         type_input.focus()
 
-    def _handle_add_resource(self) -> None:
+    async def _handle_add_resource(self) -> None:
         url_input = self.query_one("#add-url", Input)
         type_input = self.query_one("#add-type", Input)
         url = url_input.value.strip()
@@ -751,41 +752,44 @@ class ResearchKBApp(App):
             import json
 
             payload = ResourceIn(url=url, resource_type=resource_type)
-            with httpx.stream(
-                "POST",
-                f"{BASE_URL}/resources/",
-                json=payload.dict(),
-                timeout=60.0,
-            ) as response:
-                if response.status_code == 200:
-                    for line in response.iter_lines():
-                        if not line:
-                            continue
-                        try:
-                            update_data = json.loads(line)
-                            update = ResourceStreamUpdate(**update_data)
+            async with httpx.AsyncClient() as client:
+                async with client.stream(
+                    "POST",
+                    f"{BASE_URL}/resources/",
+                    json=payload.dict(),
+                    timeout=60.0,
+                ) as response:
+                    if response.status_code == 200:
+                        async for line in response.aiter_lines():
+                            if not line:
+                                continue
+                            try:
+                                update_data = json.loads(line)
+                                update = ResourceStreamUpdate(**update_data)
 
-                            if update.type == "status":
-                                self._show_message(f"[yellow]{update.status}[/yellow]")
-                            elif update.type == "result" and update.resource:
-                                self.notify(
-                                    f"Resource added!\n"
-                                    f"ID: {update.resource.id}\n"
-                                    f"Title: {update.resource.title or 'Extracting title...'}\n"
-                                    f"URL: {update.resource.url}\n"
-                                    f"Type: {update.resource.resource_type}\n"
-                                    f"Text length: {len(update.resource.extracted_text or '')}",
-                                    title="Success",
-                                    severity="information",
+                                if update.type == "status":
+                                    self._show_message(
+                                        f"[yellow]{update.status}[/yellow]"
+                                    )
+                                elif update.type == "result" and update.resource:
+                                    self.notify(
+                                        f"Resource added!\n"
+                                        f"ID: {update.resource.id}\n"
+                                        f"Title: {update.resource.title or 'Extracting title...'}\n"
+                                        f"URL: {update.resource.url}\n"
+                                        f"Type: {update.resource.resource_type}\n"
+                                        f"Text length: {len(update.resource.extracted_text or '')}",
+                                        title="Success",
+                                        severity="information",
+                                    )
+                                    self._show_welcome()
+                            except Exception as parse_e:
+                                logger.error(
+                                    f"Failed to parse stream line: {line} - {parse_e}"
                                 )
-                                self._show_welcome()
-                        except Exception as parse_e:
-                            logger.error(
-                                f"Failed to parse stream line: {line} - {parse_e}"
-                            )
-                else:
-                    error_text = response.read().decode()
-                    self._show_message(f"[red]Error: {error_text}[/red]")
+                    else:
+                        error_text = await response.aread()
+                        self._show_message(f"[red]Error: {error_text.decode()}[/red]")
         except Exception as e:
             logger.exception("An error occurred")
             self._show_message(f"[red]Error: {e}[/red]")

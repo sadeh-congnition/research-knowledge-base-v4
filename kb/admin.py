@@ -21,7 +21,7 @@ class SecretAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
 
 @admin.register(Resource)
 class ResourceAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
-    list_display = ("url", "resource_type", "date_created")
+    list_display = ("id", "url", "resource_type", "date_created")
     list_filter = ("resource_type",)
     search_fields = ("url",)
 

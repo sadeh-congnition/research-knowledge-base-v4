@@ -1,5 +1,9 @@
+import os
 import pytest
 from model_bakery import baker
+
+os.environ["NINJA_SKIP_REGISTRY"] = "yes"
+
 
 from kb.models import Chunk, ChunkConfig, LLMConfig, Resource, Secret
 

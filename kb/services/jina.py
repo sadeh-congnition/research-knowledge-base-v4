@@ -13,9 +13,10 @@ def extract_text(url: str, api_key: str) -> str:
     """
     jina_url = f"https://r.jina.ai/{url}"
     headers = {
-        "Authorization": f"Bearer {api_key}",
         "Accept": "text/plain",
     }
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
 
     response = httpx.get(jina_url, headers=headers, timeout=60.0)
     response.raise_for_status()

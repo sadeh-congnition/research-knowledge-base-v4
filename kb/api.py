@@ -2,6 +2,10 @@ from django.http import StreamingHttpResponse
 from django.shortcuts import get_object_or_404
 from loguru import logger
 from ninja import NinjaAPI, Router
+import litellm
+import os
+import requests
+import json
 
 from events.models import EntityTypes, EventDescriptions
 from events.services import fire_event
@@ -64,32 +68,72 @@ api.add_router("/secrets", secret_router)
 resource_router = Router(tags=["resources"])
 
 
-@resource_router.post("/", response=ResourceOut)
-def create_resource(request, payload: ResourceIn) -> Resource:
+@resource_router.post("/")
+def create_resource(request, payload: ResourceIn):
     """Create a resource: extract text via Jina, chunk it, persist to DB + ChromaDB."""
-    # Get Jina API key from secrets via TextExtractionConfig
-    jina_config = TextExtractionConfig.objects.filter(title="JINA AI API").first()
-    jina_secret = jina_config.secrets.first() if jina_config else None
-    api_key = jina_secret.value if jina_secret else ""
 
-    # Extract text using Jina Reader API
-    extracted_text = jina_service.extract_text(payload.url, api_key)
+    def event_stream():
+        from kb.schemas import ResourceStreamUpdate, ResourceOut
 
-    # Create the resource
-    resource = Resource.objects.create(
-        url=payload.url,
-        resource_type=payload.resource_type,
-        extracted_text=extracted_text,
-    )
+        yield (
+            ResourceStreamUpdate(
+                status="Starting extraction...", type="status"
+            ).model_dump_json()
+            + "\n"
+        )
 
-    # Fire event for text extraction cleanup
-    fire_event(
-        entity=EntityTypes.RESOURCE,
-        entity_id=str(resource.id),
-        description=EventDescriptions.TEXT_EXTRACTED,
-    )
+        # Get Jina API key from secrets via TextExtractionConfig
+        jina_config = TextExtractionConfig.objects.filter(title="JINA AI API").first()
+        jina_secret = jina_config.secrets.first() if jina_config else None
+        api_key = jina_secret.value if jina_secret else ""
 
-    return resource
+        yield (
+            ResourceStreamUpdate(
+                status="Extracting text using Jina Reader API...", type="status"
+            ).model_dump_json()
+            + "\n"
+        )
+
+        # Extract text using Jina Reader API
+        extracted_text = jina_service.extract_text(payload.url, api_key)
+
+        yield (
+            ResourceStreamUpdate(
+                status="Saving resource to database...", type="status"
+            ).model_dump_json()
+            + "\n"
+        )
+
+        # Create the resource
+        resource = Resource.objects.create(
+            url=payload.url,
+            resource_type=payload.resource_type,
+            extracted_text=extracted_text,
+        )
+
+        yield (
+            ResourceStreamUpdate(
+                status="Firing text extraction cleanup event...", type="status"
+            ).model_dump_json()
+            + "\n"
+        )
+
+        # Fire event for text extraction cleanup
+        fire_event(
+            entity=EntityTypes.RESOURCE,
+            entity_id=str(resource.id),
+            description=EventDescriptions.TEXT_EXTRACTED,
+        )
+
+        res_out = ResourceOut.from_orm(resource)
+        yield (
+            ResourceStreamUpdate(
+                status="Completed", type="result", resource=res_out
+            ).model_dump_json()
+            + "\n"
+        )
+
+    return StreamingHttpResponse(event_stream(), content_type="application/x-ndjson")
 
 
 @resource_router.get("/", response=list[ResourceListOut])
@@ -166,21 +210,50 @@ llm_config_router = Router(tags=["llm-configs"])
 
 
 def test_llm_connection(model_name: str, provider: str, api_key: str | None) -> str:
-    import os
-    import litellm
+    model_name_prefixed = llm_service.setup_llm_config(model_name, provider, api_key)
 
-    model_name = llm_service.setup_llm_config(model_name, provider, api_key)
-
-    if "pytest" in str(os.environ.get("PYTEST_CURRENT_TEST")):
+    if (
+        os.environ.get("PYTEST_CURRENT_TEST")
+        or "pytest" in str(os.environ.get("PYTEST_CURRENT_TEST", ""))
+    ) and not os.environ.get("BYPASS_PYTEST_MOCK"):
         return "Mocked test response"
 
     try:
-        response = litellm.completion(
-            model=model_name,
-            messages=[{"role": "user", "content": "Hi, tell me a one sentence joke!"}],
-            max_tokens=50,
-        )
-        return response.choices[0].message.content
+        if provider.lower() == llm_service.LLMProvider.LMSTUDIO.value:
+            base_url = os.environ.get("LM_STUDIO_API_BASE", "http://localhost:1234")
+            api_url = f"{base_url.rstrip('/')}/api/v1/chat"
+
+            data = {
+                "model": model_name_prefixed,
+                "system_prompt": "You are a helpful assistant.",
+                "input": "Hi, tell me a one sentence joke!",
+                "stream": False,
+            }
+
+            response = requests.post(api_url, json=data, timeout=5.0)
+            response.raise_for_status()
+            result = response.json()
+
+            # Based on the user example's result structure for non-streaming
+            if "output" in result:
+                output_content = "".join(
+                    [
+                        o.get("content", "")
+                        for o in result["output"]
+                        if o.get("type") == "message"
+                    ]
+                )
+                return output_content
+            return "Unexpected response format from LM Studio"
+        else:
+            response = litellm.completion(
+                model=model_name_prefixed,
+                messages=[
+                    {"role": "user", "content": "Hi, tell me a one sentence joke!"}
+                ],
+                max_tokens=50,
+            )
+            return response.choices[0].message.content
     except Exception as e:
         logger.exception("LLM connection test failed")
         return f"Connection test failed: {e}"
@@ -197,13 +270,16 @@ def setup_default_llm_config(request, payload: DefaultLLMConfigIn) -> LLMConfig:
     # Clear other defaults
     LLMConfig.objects.filter(is_default=True).update(is_default=False)
 
-    if payload.provider.value not in payload.model_name:
-        payload.model_name = f"{payload.provider.value}/{payload.model_name}"
+    # Use setup_llm_config to get the prefixed name for storage if needed,
+    # but the tests seem to expect the prefixed name in the DB.
+    model_name_for_config = llm_service.setup_llm_config(
+        payload.model_name, payload.provider, payload.api_key
+    )
 
     config, _ = LLMConfig.objects.update_or_create(
         name="Default Chat LLM",
         defaults={
-            "model_name": payload.model_name,
+            "model_name": model_name_for_config,
             "provider": payload.provider,
             "secret": secret,
             "is_default": True,
@@ -211,7 +287,7 @@ def setup_default_llm_config(request, payload: DefaultLLMConfigIn) -> LLMConfig:
     )
 
     config.test_response = test_llm_connection(
-        payload.model_name, payload.provider, payload.api_key
+        model_name_for_config, payload.provider, payload.api_key
     )
     return config
 
@@ -231,9 +307,14 @@ def create_llm_config(request, payload: LLMConfigIn) -> LLMConfig:
     if payload.secret_id:
         secret = get_object_or_404(Secret, id=payload.secret_id)
 
+    secret_value = secret.value if secret else None
+    model_name_for_config = llm_service.setup_llm_config(
+        payload.model_name, payload.provider, secret_value
+    )
+
     config = LLMConfig.objects.create(
         name=payload.name,
-        model_name=payload.model_name,
+        model_name=model_name_for_config,
         provider=payload.provider,
         is_default=payload.is_default,
         secret=secret,

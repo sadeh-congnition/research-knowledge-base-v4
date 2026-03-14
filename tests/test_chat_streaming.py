@@ -5,16 +5,17 @@ from kb.models import Resource, LLMConfig
 import json
 
 
+import os
+
+
 @pytest.mark.django_db
-def test_stream_chat_message():
+@pytest.mark.skipif("GROQ_API_KEY" not in os.environ, reason="Requires GROQ_API_KEY")
+def test_stream_chat_message(llm_config):
     client = Client()
 
-    # Create resource and LLM config
+    # Create resource
     resource = baker.make(
         Resource, url="http://example.com", extracted_text="test content"
-    )
-    llm_config = baker.make(
-        LLMConfig, model_name="llama-3.1-8b-instant", provider="groq", is_default=True
     )
 
     payload = {"resource_id": resource.id, "message": "hello"}

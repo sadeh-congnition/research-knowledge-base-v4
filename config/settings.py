@@ -53,7 +53,7 @@ CHROMADB_COLLECTION_NAME = "resource_chunks"
 CHROMADB_VIZ_EMBEDDING_FUNCTION = "kb.services.chromadb_service._get_embeddings"
 
 # LMStudio embedding endpoint
-LMSTUDIO_BASE_URL = "http://localhost:1234"
+LMSTUDIO_BASE_URL = "http://127.0.0.1:1234"
 
 # Event Consumer settings
 EVENT_CONSUMER_RETRY_FAILED = False
@@ -66,6 +66,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "kb.middleware.RequestLoggingMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"

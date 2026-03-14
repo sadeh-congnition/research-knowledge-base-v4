@@ -52,6 +52,12 @@ class ResourceListOut(Schema):
     date_created: datetime
 
 
+class ResourceStreamUpdate(Schema):
+    status: str
+    type: str  # "status" or "result"
+    resource: ResourceOut | None = None
+
+
 # --- ChunkConfig Schemas ---
 
 

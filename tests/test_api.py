@@ -40,6 +40,39 @@ class TestSecretEndpoints:
 
 
 class TestResourceEndpoints:
+    def test_create_resource_streaming(self, db):
+        import json
+        from django.test import Client
+        from kb.schemas import ResourceIn, ResourceStreamUpdate
+
+        django_client = Client()
+        payload = {"url": "https://example.com", "resource_type": "paper"}
+
+        response = django_client.post(
+            "/api/resources/", data=json.dumps(payload), content_type="application/json"
+        )
+        assert response.status_code == 200
+
+        chunks = list(response.streaming_content)
+        lines = [chunk.decode("utf-8").strip() for chunk in chunks]
+        lines = [line for line in lines if line]
+
+        assert (
+            len(lines) >= 4
+        )  # Should have at least the status updates and the final result
+
+        updates = []
+        for line in lines:
+            data = json.loads(line)
+            updates.append(ResourceStreamUpdate(**data))
+
+        # Check that the last update is the result
+        last_update = updates[-1]
+        assert last_update.type == "result"
+        assert last_update.resource is not None
+        assert last_update.resource.url == "https://example.com"
+        assert last_update.resource.resource_type == "paper"
+
     def test_list_resources_empty(self, db):
         response = client.get("/resources/")
         assert response.status_code == 200

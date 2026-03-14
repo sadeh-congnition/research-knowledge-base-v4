@@ -73,12 +73,17 @@ def chat_with_resource(
         api_key=api_key,
     )
 
-    ai_msg: Message
+    backend = (
+        "lmstudio"
+        if llm_config.provider == llm_service.LLMProvider.LMSTUDIO
+        else "litellm"
+    )
     ai_msg, _, _ = chat_instance.send_user_msg_to_llm(
         model_name=model_name,
         text=user_message,
         user=user,
         include_chat_history=True,
+        backend=backend,
     )
 
     return ai_msg.text, chat_instance
@@ -126,11 +131,17 @@ def stream_chat_with_resource(
     # Yield the chat_id first so the TUI knows which chat this belongs to
     yield f"__CHAT_ID__:{chat_instance.chat_db_model.id}"
 
+    backend = (
+        "lmstudio"
+        if llm_config.provider == llm_service.LLMProvider.LMSTUDIO
+        else "litellm"
+    )
     yield from chat_instance.stream_user_msg_to_llm(
         model_name=model_name,
         text=user_message,
         user=user,
         include_chat_history=True,
+        backend=backend,
     )
 
 
@@ -249,11 +260,17 @@ def continue_chat(
         api_key=api_key,
     )
 
+    backend = (
+        "lmstudio"
+        if llm_config.provider == llm_service.LLMProvider.LMSTUDIO
+        else "litellm"
+    )
     ai_msg, _, _ = chat_instance.send_user_msg_to_llm(
         model_name=model_name,
         text=user_message,
         user=user,
         include_chat_history=True,
+        backend=backend,
     )
 
     return ai_msg.text, chat_instance
@@ -291,9 +308,15 @@ def stream_continue_chat(
         api_key=api_key,
     )
 
+    backend = (
+        "lmstudio"
+        if llm_config.provider == llm_service.LLMProvider.LMSTUDIO
+        else "litellm"
+    )
     yield from chat_instance.stream_user_msg_to_llm(
         model_name=model_name,
         text=user_message,
         user=user,
         include_chat_history=True,
+        backend=backend,
     )
