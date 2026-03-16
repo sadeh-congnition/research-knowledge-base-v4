@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "kb",
     "events",
     "django_chromadb_viz",
+    "djangorag.lightrag_app",
 ]
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -54,6 +55,19 @@ CHROMADB_VIZ_EMBEDDING_FUNCTION = "kb.services.chromadb_service._get_embeddings"
 
 # LMStudio embedding endpoint
 LMSTUDIO_BASE_URL = "http://127.0.0.1:1234"
+
+# LightRAG settings
+LIGHTRAG = {
+    "EMBEDDING_PROVIDER": "LMStudio",
+    "EMBEDDING_MODEL": "text-embedding-nomic-embed-text-v1.5",
+    "EMBEDDING_BASE_URL": LMSTUDIO_BASE_URL,
+}
+CHROMADB_IN_MEMORY = False
+
+LADYBUGDB = {
+    "DATABASE_PATH": str(BASE_DIR / "ladybugdb.lbug"),
+    "IN_MEMORY": False,
+}
 
 # Event Consumer settings
 EVENT_CONSUMER_RETRY_FAILED = False

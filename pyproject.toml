@@ -12,6 +12,8 @@ dependencies = [
     "django-llm-chat",
     "django-ninja>=1.5.3",
     "django-stubs>=5.2.9",
+    "djangorag",
+    "embed-gen",
     "httpx>=0.28.1",
     "litellm>=1.82.0",
     "loguru>=0.7.3",
@@ -20,13 +22,20 @@ dependencies = [
     "pytest-asyncio>=1.3.0",
     "pytest-django>=4.12.0",
     "sentence-transformers>=5.2.3",
+    "spacy>=3.8.11",
     "textual>=8.0.2",
 ]
 
 [tool.uv.sources]
-django-llm-chat = { git = "https://github.com/sadeh-congnition/django-llm-chat.git" }
+django-llm-chat = { path = "../django-llm-chat", editable = true }
+django-chromadb-viz = { path = "../django-chromadb-viz", editable = true }
+djangorag = { path = "../lightrag-django" }
+embed-gen = { path = "../embed_gen" }
 
 [dependency-groups]
 dev = [
+    "django-chromadb-viz",
+    "django-llm-chat",
+    "ptpython>=3.0.32",
     "ruff>=0.15.5",
 ]
