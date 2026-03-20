@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import logging
-from pathlib import Path
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -645,6 +643,9 @@ class ResearchKBApp(App):
         elif input_id == "llm-api-key":
             await self._handle_llm_configs()
             return
+        elif input_id == "kg-trigger":
+            await self._handle_add_kg_config()
+            return
         elif input_id == "jina-api-key":
             self._handle_text_extraction_configs()
             return
@@ -679,6 +680,8 @@ class ResearchKBApp(App):
             self._show_semantic_search()
         elif cmd in ("llm-configs", "lc"):
             self._show_llm_configs()
+        elif cmd in ("kg-configs", "kgc"):
+            self._show_kg_configs()
         elif cmd in ("text-extraction-configs", "tec"):
             self._show_text_extraction_configs()
         else:
@@ -706,6 +709,7 @@ class ResearchKBApp(App):
             "  [bold]continue <chat_id>, co[/bold]    - Continue an existing chat\n"
             "  [bold]search, ss[/bold]                - Semantic search across chunks\n"
             "  [bold]llm-configs, lc[/bold]             - LLM Configs\n"
+            "  [bold]kg-configs, kgc[/bold]             - Knowledge Graph Configs\n"
             "  [bold]text-extraction-configs, tec[/bold]  - Text Extraction Configs\n"
             "  [bold]help, h[/bold]                   - Show this help\n"
         )
@@ -1040,8 +1044,7 @@ class ResearchKBApp(App):
                     return
         except Exception as e:
             logger.exception("Error checking embedding config before search")
-            self._show_message(f"[red]Error checking embedding config: {e}[/red]")
-            return
+            self._show_message(f"[red]Error checking embedding status: {e}[/red]")
 
         search_screen = SemanticSearchScreen()
         container.mount(search_screen)

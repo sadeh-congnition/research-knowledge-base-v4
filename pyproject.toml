@@ -5,37 +5,37 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "chonkie[semantic]>=1.5.6",
-    "chromadb>=1.5.2",
-    "django>=6.0.3",
-    "django-click>=2.5.0",
-    "django-llm-chat",
-    "django-ninja>=1.5.3",
-    "django-stubs>=5.2.9",
-    "djangorag",
-    "embed-gen",
-    "httpx>=0.28.1",
-    "litellm>=1.82.0",
-    "loguru>=0.7.3",
-    "model-bakery>=1.23.3",
-    "pytest>=9.0.2",
-    "pytest-asyncio>=1.3.0",
-    "pytest-django>=4.12.0",
-    "sentence-transformers>=5.2.3",
-    "spacy>=3.8.11",
-    "textual>=8.0.2",
+  "chonkie[semantic]>=1.5.6",
+  "chromadb>=1.5.2",
+  "django>=6.0.3",
+  "django-click>=2.5.0",
+  "django-llm-chat",
+  "django-ninja>=1.5.3",
+  "django-stubs>=5.2.9",
+  "django-lightrag",
+  "embed-gen",
+  "httpx>=0.28.1",
+  "litellm>=1.82.0",
+  "loguru>=0.7.3",
+  "model-bakery>=1.23.3",
+  "pytest>=9.0.2",
+  "pytest-asyncio>=1.3.0",
+  "pytest-django>=4.12.0",
+  "sentence-transformers>=5.2.3",
+  "spacy>=3.8.11",
+  "textual>=8.0.2",
 ]
 
 [tool.uv.sources]
-django-llm-chat = { path = "../django-llm-chat", editable = true }
-django-chromadb-viz = { path = "../django-chromadb-viz", editable = true }
-djangorag = { path = "../lightrag-django" }
-embed-gen = { path = "../embed_gen" }
+django-llm-chat = { path = "../llm_chat_django", editable = true }
+django-chromadb-viz = { path = "../chromadb_viz_django", editable = true }
+django-lightrag = { path = "../lightrag_django" }
+embed-gen = { path = "../embed-gen" }
 
 [dependency-groups]
 dev = [
-    "django-chromadb-viz",
-    "django-llm-chat",
-    "ptpython>=3.0.32",
-    "ruff>=0.15.5",
+  "django-chromadb-viz",
+  "django-llm-chat",
+  "ptpython>=3.0.32",
+  "ruff>=0.15.5",
 ]

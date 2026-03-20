@@ -5,7 +5,6 @@ from ninja import NinjaAPI, Router
 import litellm
 import os
 import requests
-import json
 
 from events.models import EntityTypes, EventDescriptions
 from events.services import fire_event
@@ -17,6 +16,7 @@ from kb.models import (
     Secret,
     TextExtractionConfig,
     EmbeddingModelConfig,
+    KnowledgeGraphConfig,
 )
 from kb.schemas import (
     ChatHistoryOut,
@@ -25,6 +25,8 @@ from kb.schemas import (
     ChatMessageOut,
     ChunkConfigOut,
     ChunkOut,
+    KnowledgeGraphConfigIn,
+    KnowledgeGraphConfigOut,
     LLMConfigIn,
     LLMConfigOut,
     ResourceIn,
@@ -42,6 +44,7 @@ from kb.services import chat as chat_service
 from kb.services import chromadb_service
 from kb.services import jina as jina_service
 from kb.services import llm as llm_service
+from events.api import events_router
 
 api = NinjaAPI(title="Research Knowledge Base API", version="1.0.0")
 
@@ -451,6 +454,13 @@ def send_chat_message(request, payload: ChatMessageIn) -> dict:
     # Cache the chat instance by chat_id
     _chat_instances[chat_inst.chat_db_model.id] = chat_inst
 
+    # Fire event for KG updates
+    fire_event(
+        entity=EntityTypes.CHAT,
+        entity_id=str(chat_inst.chat_db_model.id),
+        description=EventDescriptions.CHAT_MESSAGE_SUBMITTED,
+    )
+
     return {
         "chat_id": chat_inst.chat_db_model.id,
         "user_message": payload.message,
@@ -474,7 +484,9 @@ def stream_chat_message(request, payload: ChatMessageIn):
             )
 
     def event_stream():
+        chat_id_to_fire = None
         if payload.chat_id:
+            chat_id_to_fire = payload.chat_id
             chunks = chat_service.stream_continue_chat(
                 chat_id=payload.chat_id,
                 user_message=payload.message,
@@ -492,7 +504,16 @@ def stream_chat_message(request, payload: ChatMessageIn):
             return
 
         for chunk in chunks:
+            if chunk.startswith("__CHAT_ID__:"):
+                chat_id_to_fire = int(chunk.split(":")[1])
             yield chunk
+
+        if chat_id_to_fire:
+            fire_event(
+                entity=EntityTypes.CHAT,
+                entity_id=str(chat_id_to_fire),
+                description=EventDescriptions.CHAT_MESSAGE_SUBMITTED,
+            )
 
     return StreamingHttpResponse(event_stream(), content_type="text/event-stream")
 
@@ -571,3 +592,38 @@ def get_search_context(request, resource_id: int, chunk_order: int) -> dict:
 
 
 api.add_router("/search", search_router)
+
+# ---- KnowledgeGraphConfig Endpoints ----
+
+kg_config_router = Router(tags=["kg-configs"])
+
+
+@kg_config_router.get("/", response=list[KnowledgeGraphConfigOut])
+def list_kg_configs(request):
+    return list(KnowledgeGraphConfig.objects.all())
+
+
+@kg_config_router.post("/", response=KnowledgeGraphConfigOut)
+def create_kg_config(request, payload: KnowledgeGraphConfigIn):
+    return KnowledgeGraphConfig.objects.create(**payload.dict())
+
+
+@kg_config_router.put("/{config_id}/", response=KnowledgeGraphConfigOut)
+def update_kg_config(request, config_id: int, payload: KnowledgeGraphConfigIn):
+    config = get_object_or_404(KnowledgeGraphConfig, id=config_id)
+    for key, value in payload.dict().items():
+        setattr(config, key, value)
+    config.save()
+    return config
+
+
+@kg_config_router.delete("/{config_id}/")
+def delete_kg_config(request, config_id: int):
+    config = get_object_or_404(KnowledgeGraphConfig, id=config_id)
+    config.delete()
+    return {"success": True}
+
+
+api.add_router("/kg-configs", kg_config_router)
+
+api.add_router("/events", events_router)

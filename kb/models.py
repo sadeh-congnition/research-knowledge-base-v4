@@ -155,3 +155,27 @@ class Reference(models.Model):
 
     def __str__(self) -> str:
         return f"Reference for Resource {self.resource_id}"
+
+
+class KnowledgeGraphConfig(models.Model):
+    name: models.CharField = models.CharField(max_length=255, unique=True)
+    package_name: models.CharField = models.CharField(
+        max_length=255, default="djangorag.lightrag_app"
+    )
+    update_trigger: models.CharField = models.CharField(
+        max_length=255,
+        choices=[
+            ("always", "Each time I send a message"),
+            ("llm_intent", "When I ask for an update explicitly"),
+        ],
+        default="always",
+    )
+    is_active: models.BooleanField = models.BooleanField(default=False)
+    date_created: models.DateTimeField = models.DateTimeField(auto_now_add=True)
+    date_updated: models.DateTimeField = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.package_name})"

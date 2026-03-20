@@ -3,6 +3,7 @@ from django.db import models
 
 class EntityTypes(models.TextChoices):
     RESOURCE = "resource", "Resource"
+    CHAT = "chat", "Chat"
 
 
 class EventDescriptions(models.TextChoices):
@@ -10,6 +11,11 @@ class EventDescriptions(models.TextChoices):
     CLEAN_UP_FINISHED = (
         "extracted text clean up finished",
         "Extracted Text Clean Up Finished",
+    )
+    CHAT_MESSAGE_SUBMITTED = "chat message submitted", "Chat Message Submitted"
+    KNOWLEDGE_GRAPH_UPDATE_REQUESTED = (
+        "knowledge graph update requested",
+        "Knowledge Graph Update Requested",
     )
 
 

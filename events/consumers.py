@@ -594,6 +594,213 @@ def consume_extract_references() -> int:
     return count
 
 
+def consume_check_kg_update() -> int:
+    """
+    Consumer that processes "chat message submitted" events.
+    Checks active KnowledgeGraphConfigs and fires update requests if necessary.
+    """
+    from kb.models import KnowledgeGraphConfig
+    from django_llm_chat.models import Message
+
+    logger.info("Running consumer: Check KG Update")
+    consumer = get_or_create_consumer("Check KG Update")
+
+    unprocessed_events = Event.objects.filter(
+        entity=EntityTypes.CHAT, description=EventDescriptions.CHAT_MESSAGE_SUBMITTED
+    ).order_by("id")
+
+    if settings.EVENT_CONSUMER_RETRY_FAILED:
+        unprocessed_events = unprocessed_events.exclude(
+            eventconsumed__consumer=consumer,
+            eventconsumed__status=ConsumptionStatus.OK,
+        )
+    else:
+        unprocessed_events = unprocessed_events.exclude(
+            eventconsumed__consumer=consumer
+        )
+
+    count = 0
+    for event in unprocessed_events:
+        logger.info(
+            f"Consumer 'Check KG Update' found event {event.id}. Starting processing..."
+        )
+        try:
+            with transaction.atomic():
+                chat_id = int(event.entity_id)
+                # Find all active KG configs
+                active_configs = KnowledgeGraphConfig.objects.filter(is_active=True)
+
+                for config in active_configs:
+                    should_update = False
+                    if config.update_trigger == "always":
+                        should_update = True
+                    elif config.update_trigger == "llm_intent":
+                        # Fetch latest user message
+                        last_msg = (
+                            Message.objects.filter(chat_id=chat_id, type="user")
+                            .order_by("-date_created")
+                            .first()
+                        )
+
+                        if last_msg:
+                            model_name = _get_llm_config()
+                            system_prompt = (
+                                "Analyze the following user message and determine if the user "
+                                "is explicitly asking to update, refresh, or add information to the knowledge graph. "
+                                "Respond with exactly 'TRUE' if yes, or 'FALSE' if no."
+                            )
+                            if os.environ.get("PYTEST_CURRENT_TEST"):
+                                should_update = "update" in last_msg.text.lower()
+                            else:
+                                try:
+                                    chat_instance = _create_chat_safely()
+                                    user = _get_or_create_consumer_user(
+                                        "rkb-consumer-kg-check"
+                                    )
+                                    chat_instance.create_system_message(
+                                        system_prompt, user
+                                    )
+
+                                    ai_msg, _, _ = chat_instance.send_user_msg_to_llm(
+                                        model_name=model_name,
+                                        text=last_msg.text,
+                                        user=user,
+                                    )
+                                    should_update = (
+                                        ai_msg.text.strip().upper() == "TRUE"
+                                    )
+                                except Exception as e:
+                                    logger.error(
+                                        f"Error calling LLM for KG intent check: {e}"
+                                    )
+                                    should_update = False
+
+                    if should_update:
+                        logger.info(
+                            f"Firing KNOWLEDGE_GRAPH_UPDATE_REQUESTED for config {config.id} in chat {chat_id}"
+                        )
+                        fire_event(
+                            entity=EntityTypes.CHAT,
+                            entity_id=f"{chat_id}:{config.id}",
+                            description=EventDescriptions.KNOWLEDGE_GRAPH_UPDATE_REQUESTED,
+                        )
+
+                EventConsumed.objects.update_or_create(
+                    event=event,
+                    consumer=consumer,
+                    defaults={
+                        "status": ConsumptionStatus.OK,
+                        "exception": None,
+                    },
+                )
+                count += 1
+        except Exception:
+            stacktrace = traceback.format_exc()
+            logger.exception(f"Failed to check KG update for event {event.id}")
+            with transaction.atomic():
+                EventConsumed.objects.update_or_create(
+                    event=event,
+                    consumer=consumer,
+                    defaults={
+                        "status": ConsumptionStatus.ERROR,
+                        "exception": stacktrace,
+                    },
+                )
+        break
+
+    return count
+
+
+def consume_update_knowledge_graph() -> int:
+    """
+    Consumer that processes "knowledge graph update requested" events.
+    Executes the configured python module/function for the specific config.
+    """
+    import importlib  # TODO move to the top of the module
+    from kb.models import KnowledgeGraphConfig
+
+    logger.info("Running consumer: Update Knowledge Graph")
+    consumer = get_or_create_consumer("Update Knowledge Graph")
+
+    unprocessed_events = Event.objects.filter(
+        entity=EntityTypes.CHAT,
+        description=EventDescriptions.KNOWLEDGE_GRAPH_UPDATE_REQUESTED,
+    ).order_by("id")
+
+    if (
+        settings.EVENT_CONSUMER_RETRY_FAILED
+    ):  # TODO: make this logic a method on the Event class
+        unprocessed_events = unprocessed_events.exclude(
+            eventconsumed__consumer=consumer,
+            eventconsumed__status=ConsumptionStatus.OK,
+        )
+    else:
+        unprocessed_events = unprocessed_events.exclude(
+            eventconsumed__consumer=consumer
+        )
+
+    count = 0
+    for event in unprocessed_events:
+        logger.info(
+            f"Consumer 'Update Knowledge Graph' found event {event.id}. Starting processing..."
+        )
+        try:
+            with transaction.atomic():
+                # entity_id is composite "chat_id:config_id"  # TODO make the entity info a dict instead of using composite IDs
+                chat_id_str, config_id_str = event.entity_id.split(":")
+                chat_id = int(chat_id_str)
+                config_id = int(config_id_str)
+
+                config = get_object_or_404(
+                    KnowledgeGraphConfig, id=config_id
+                )  # TODO raise excpetion not 404
+                logger.info(
+                    f"Executing KG update for {config.package_name} on chat {chat_id}..."
+                )
+
+                if os.environ.get("PYTEST_CURRENT_TEST"):  # TODO no mocking!
+                    # Just mock for test
+                    pass
+                else:
+                    # Dynamically import and run. Assuming package_name exposes a run_update(chat_id) function
+                    try:
+                        pkg = importlib.import_module(config.package_name)
+                        if hasattr(pkg, "run_update"):
+                            pkg.run_update(chat_id)
+                        else:
+                            logger.error(
+                                f"Package {config.package_name} does not have 'run_update' function."
+                            )
+                    except ImportError as e:
+                        logger.error(
+                            f"Failed to import KG package {config.package_name}: {e}"
+                        )
+
+                EventConsumed.objects.update_or_create(
+                    event=event,
+                    consumer=consumer,
+                    defaults={
+                        "status": ConsumptionStatus.OK,
+                        "exception": None,
+                    },
+                )
+                count += 1
+        except Exception:
+            stacktrace = traceback.format_exc()
+            logger.exception(f"Failed to update KG for event {event.id}")
+            with transaction.atomic():
+                EventConsumed.objects.update_or_create(
+                    event=event,
+                    consumer=consumer,
+                    defaults={
+                        "status": ConsumptionStatus.ERROR,
+                        "exception": stacktrace,
+                    },
+                )
+        break
+    return count
+
+
 def process_all_events() -> int:
     """Helper to process all consumers."""
     count = 0
@@ -602,4 +809,6 @@ def process_all_events() -> int:
     count += consume_chunk_and_embed()
     count += consume_extract_title_of_resource()
     count += consume_extract_references()
+    count += consume_check_kg_update()
+    count += consume_update_knowledge_graph()
     return count

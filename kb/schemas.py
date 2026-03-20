@@ -177,3 +177,23 @@ class ChunkContextOut(Schema):
 
 class SearchContextOut(Schema):
     chunks: list[ChunkContextOut]
+
+
+# --- KnowledgeGraphConfig Schemas ---
+
+
+class KnowledgeGraphConfigIn(Schema):
+    name: str
+    package_name: str = "djangorag.lightrag_app"
+    update_trigger: str = "always"
+    is_active: bool = False
+
+
+class KnowledgeGraphConfigOut(Schema):
+    id: int
+    name: str
+    package_name: str
+    update_trigger: str
+    is_active: bool
+    date_created: datetime
+    date_updated: datetime

@@ -560,7 +560,7 @@ wheels = [
 [[package]]
 name = "django-chromadb-viz"
 version = "0.1.0"
-source = { editable = "../django-chromadb-viz" }
+source = { editable = "../chromadb_viz_django" }
 dependencies = [
     { name = "chromadb" },
     { name = "django" },
@@ -601,9 +601,55 @@ wheels = [
 ]
 
 [[package]]
+name = "django-lightrag"
+version = "0.1.0"
+source = { directory = "../lightrag_django" }
+dependencies = [
+    { name = "aiofiles" },
+    { name = "asyncio-throttle" },
+    { name = "chromadb" },
+    { name = "django" },
+    { name = "django-llm-chat" },
+    { name = "django-ninja" },
+    { name = "numpy" },
+    { name = "pytest-django" },
+    { name = "python-dotenv" },
+    { name = "real-ladybug" },
+    { name = "tiktoken" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiofiles", specifier = ">=23.0.0" },
+    { name = "asyncio-throttle", specifier = ">=1.0.2" },
+    { name = "black", marker = "extra == 'dev'", specifier = ">=23.0.0" },
+    { name = "chromadb", specifier = ">=0.4.0" },
+    { name = "django", specifier = ">=5.2.8" },
+    { name = "django-llm-chat" },
+    { name = "django-ninja", specifier = ">=1.0" },
+    { name = "django-stubs", marker = "extra == 'dev'", specifier = ">=4.2.0" },
+    { name = "numpy", specifier = ">=1.24.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },
+    { name = "pytest-django", specifier = ">=4.11.1" },
+    { name = "pytest-django", marker = "extra == 'dev'", specifier = ">=4.5.0" },
+    { name = "python-dotenv", specifier = ">=1.0.0" },
+    { name = "real-ladybug", specifier = ">=0.1.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
+    { name = "tiktoken", specifier = ">=0.5.0" },
+]
+provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "flake8", specifier = ">=5.0.4" },
+    { name = "ruff", specifier = ">=0.15.6" },
+]
+
+[[package]]
 name = "django-llm-chat"
 version = "0.1.0"
-source = { editable = "../django-llm-chat" }
+source = { editable = "../llm_chat_django" }
 dependencies = [
     { name = "django" },
     { name = "litellm" },
@@ -669,52 +715,6 @@ wheels = [
 ]
 
 [[package]]
-name = "djangorag"
-version = "0.1.0"
-source = { directory = "../lightrag-django" }
-dependencies = [
-    { name = "aiofiles" },
-    { name = "asyncio-throttle" },
-    { name = "chromadb" },
-    { name = "django" },
-    { name = "django-ninja" },
-    { name = "embed-gen" },
-    { name = "numpy" },
-    { name = "pytest-django" },
-    { name = "python-dotenv" },
-    { name = "real-ladybug" },
-    { name = "tiktoken" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "aiofiles", specifier = ">=23.0.0" },
-    { name = "asyncio-throttle", specifier = ">=1.0.2" },
-    { name = "black", marker = "extra == 'dev'", specifier = ">=23.0.0" },
-    { name = "chromadb", specifier = ">=0.4.0" },
-    { name = "django", specifier = ">=4.2" },
-    { name = "django-ninja", specifier = ">=1.0" },
-    { name = "django-stubs", marker = "extra == 'dev'", specifier = ">=4.2.0" },
-    { name = "embed-gen", directory = "../embed_gen" },
-    { name = "numpy", specifier = ">=1.24.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },
-    { name = "pytest-django", specifier = ">=4.11.1" },
-    { name = "pytest-django", marker = "extra == 'dev'", specifier = ">=4.5.0" },
-    { name = "python-dotenv", specifier = ">=1.0.0" },
-    { name = "real-ladybug", specifier = ">=0.1.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
-    { name = "tiktoken", specifier = ">=0.5.0" },
-]
-provides-extras = ["dev"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "flake8", specifier = ">=5.0.4" },
-    { name = "ruff", specifier = ">=0.15.6" },
-]
-
-[[package]]
 name = "durationpy"
 version = "0.10"
 source = { registry = "https://pypi.org/simple" }
@@ -726,7 +726,7 @@ wheels = [
 [[package]]
 name = "embed-gen"
 version = "0.1.0"
-source = { directory = "../embed_gen" }
+source = { directory = "../embed-gen" }
 dependencies = [
     { name = "httpx" },
     { name = "pytest" },
@@ -2590,10 +2590,10 @@ dependencies = [
     { name = "chromadb" },
     { name = "django" },
     { name = "django-click" },
+    { name = "django-lightrag" },
     { name = "django-llm-chat" },
     { name = "django-ninja" },
     { name = "django-stubs" },
-    { name = "djangorag" },
     { name = "embed-gen" },
     { name = "httpx" },
     { name = "litellm" },
@@ -2621,11 +2621,11 @@ requires-dist = [
     { name = "chromadb", specifier = ">=1.5.2" },
     { name = "django", specifier = ">=6.0.3" },
     { name = "django-click", specifier = ">=2.5.0" },
-    { name = "django-llm-chat", editable = "../django-llm-chat" },
+    { name = "django-lightrag", directory = "../lightrag_django" },
+    { name = "django-llm-chat", editable = "../llm_chat_django" },
     { name = "django-ninja", specifier = ">=1.5.3" },
     { name = "django-stubs", specifier = ">=5.2.9" },
-    { name = "djangorag", directory = "../lightrag-django" },
-    { name = "embed-gen", directory = "../embed_gen" },
+    { name = "embed-gen", directory = "../embed-gen" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "litellm", specifier = ">=1.82.0" },
     { name = "loguru", specifier = ">=0.7.3" },
@@ -2640,8 +2640,8 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "django-chromadb-viz", editable = "../django-chromadb-viz" },
-    { name = "django-llm-chat", editable = "../django-llm-chat" },
+    { name = "django-chromadb-viz", editable = "../chromadb_viz_django" },
+    { name = "django-llm-chat", editable = "../llm_chat_django" },
     { name = "ptpython", specifier = ">=3.0.32" },
     { name = "ruff", specifier = ">=0.15.5" },
 ]
