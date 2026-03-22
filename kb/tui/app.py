@@ -37,7 +37,6 @@ class Command:
 
 
 # Command registry - centralized source of truth for all TUI commands
-# Note: kg-configs is intentionally omitted as it has no real handler yet
 COMMAND_REGISTRY: dict[str, Command] = {}
 
 
@@ -593,7 +592,7 @@ class ResearchKBApp(App):
 
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit"),
-        Binding("escape", "action_escape", "Cancel/Back"),
+        Binding("escape", "escape", "Cancel/Back"),
         Binding("up", "move_up", "Move Up", show=False),
         Binding("down", "move_down", "Move Down", show=False),
     ]
@@ -787,13 +786,17 @@ class ResearchKBApp(App):
         elif input_id == "jina-api-key":
             self._handle_text_extraction_configs()
             return
+        elif input_id == "kg-active":
+            self._handle_kg_configs()
+            return
         elif input_id != "command-input":
             return
 
-        # Close autocomplete if open
+        # If autocomplete is open, commit the highlighted suggestion before resolving.
+        self._apply_autocomplete_selection()
         self._close_autocomplete()
 
-        command = event.value.strip()
+        command = event.input.value.strip()
         event.input.value = ""
 
         if not command:
@@ -1390,6 +1393,112 @@ class ResearchKBApp(App):
             logger.exception("An error occurred")
             self._show_message(f"[red]Error: {e}[/red]")
 
+    # ---- Knowledge Graph Configs ----
+
+    def _show_kg_configs(self) -> None:
+        self.query_one("#command-input", Input).display = False
+        container = self.query_one("#main-container", Container)
+        container.remove_children()
+
+        configs_info = "[bold]Knowledge Graph Configurations:[/bold]\n\n"
+
+        try:
+            response = httpx.get(f"{BASE_URL}/kg-configs/", timeout=10.0)
+            if response.status_code == 200:
+                configs = response.json()
+                if configs:
+                    for config in configs:
+                        active_marker = " (ACTIVE)" if config.get("is_active") else ""
+                        configs_info += (
+                            f"  - {config.get('name')} "
+                            f"[{config.get('package_name')} | {config.get('update_trigger')}]"
+                            f"{active_marker}\n"
+                        )
+                else:
+                    configs_info += "  [yellow]No configurations found.[/yellow]\n"
+            else:
+                configs_info += f"  [red]Error: {response.text}[/red]\n"
+        except Exception:
+            logger.exception("Could not fetch knowledge graph configurations")
+            configs_info += "  [red]Could not fetch configurations.[/red]\n"
+
+        container.mount(
+            Container(
+                Label(configs_info),
+                Label("\n[bold]Create Knowledge Graph Config[/bold]"),
+                Label("Name:"),
+                Input(placeholder="Primary KG", id="kg-name"),
+                Label("Package name:"),
+                Input(placeholder="django_lightrag", id="kg-package-name"),
+                Label("Update trigger (always / llm_intent):"),
+                Input(placeholder="always", id="kg-update-trigger"),
+                Label("Active? (true / false):"),
+                Input(placeholder="false", id="kg-active"),
+                Label("Press Enter on Active field to submit"),
+                classes="form-container",
+            )
+        )
+
+        self.call_after_refresh(lambda: self.query_one("#kg-name", Input).focus())
+
+    def _handle_kg_configs(self) -> None:
+        name_input = self.query_one("#kg-name", Input)
+        package_name_input = self.query_one("#kg-package-name", Input)
+        update_trigger_input = self.query_one("#kg-update-trigger", Input)
+        active_input = self.query_one("#kg-active", Input)
+
+        name = name_input.value.strip()
+        package_name = package_name_input.value.strip() or "django_lightrag"
+        update_trigger = update_trigger_input.value.strip() or "always"
+        active_raw = active_input.value.strip().lower() or "false"
+
+        if not name:
+            self._show_message("[red]Name is required.[/red]")
+            return
+
+        if update_trigger not in {"always", "llm_intent"}:
+            self._show_message(
+                "[red]Update trigger must be 'always' or 'llm_intent'.[/red]"
+            )
+            return
+
+        if active_raw not in {"true", "false"}:
+            self._show_message("[red]Active must be 'true' or 'false'.[/red]")
+            return
+
+        from kb.schemas import KnowledgeGraphConfigIn
+
+        payload = KnowledgeGraphConfigIn(
+            name=name,
+            package_name=package_name,
+            update_trigger=update_trigger,
+            is_active=active_raw == "true",
+        )
+
+        try:
+            response = httpx.post(
+                f"{BASE_URL}/kg-configs/",
+                json=payload.dict(),
+                timeout=10.0,
+            )
+            if response.status_code == 200:
+                data = response.json()
+                self.notify(
+                    f"Knowledge graph config saved!\n"
+                    f"Name: {data['name']}\n"
+                    f"Package: {data['package_name']}\n"
+                    f"Trigger: {data['update_trigger']}\n"
+                    f"Active: {data['is_active']}",
+                    title="Success",
+                    severity="information",
+                )
+                self._show_welcome()
+            else:
+                self._show_message(f"[red]Error: {response.text}[/red]")
+        except Exception as e:
+            logger.exception("An error occurred")
+            self._show_message(f"[red]Error: {e}[/red]")
+
     # ---- Autocomplete Handling ----
 
     def on_input_changed(self, event: Input.Changed) -> None:
@@ -1475,6 +1584,34 @@ class ResearchKBApp(App):
         except Exception:
             pass
 
+    def _apply_autocomplete_selection(self) -> bool:
+        """Apply the highlighted autocomplete suggestion to the command input."""
+        try:
+            popup = self.query_one("#autocomplete-popup", Container)
+            if not popup.display:
+                return False
+
+            cmd_input = self.query_one("#command-input", Input)
+            suggestions = _get_command_suggestions(cmd_input.value.strip())
+            if not suggestions:
+                return False
+
+            option_list = self.query_one("#autocomplete-options", OptionList)
+            highlighted = option_list.highlighted
+            if highlighted is None:
+                highlighted = 0
+
+            if 0 <= highlighted < len(suggestions):
+                selected_cmd = suggestions[highlighted]
+                suffix = " " if selected_cmd.takes_argument else ""
+                cmd_input.value = selected_cmd.name + suffix
+                cmd_input.cursor_position = len(cmd_input.value)
+                cmd_input.focus()
+                return True
+        except Exception:
+            logger.exception("Error applying autocomplete selection")
+        return False
+
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         """Handle selection from the autocomplete popup."""
         try:
@@ -1482,27 +1619,8 @@ class ResearchKBApp(App):
             if not popup.display:
                 return
 
-            # Get the selected index
-            option_list = self.query_one("#autocomplete-options", OptionList)
-            highlighted = option_list.highlighted
-
-            if highlighted is not None:
-                # Get the command at the highlighted index
-                suggestions = _get_command_suggestions(
-                    self.query_one("#command-input", Input).value.strip()
-                )
-                if 0 <= highlighted < len(suggestions):
-                    selected_cmd = suggestions[highlighted]
-
-                    # Close popup and insert canonical command
-                    self._close_autocomplete()
-
-                    cmd_input = self.query_one("#command-input", Input)
-                    # Insert canonical command + space if it takes an argument
-                    suffix = " " if selected_cmd.takes_argument else ""
-                    cmd_input.value = selected_cmd.name + suffix
-                    cmd_input.cursor_position = len(cmd_input.value)
-                    cmd_input.focus()
+            self._apply_autocomplete_selection()
+            self._close_autocomplete()
         except Exception:
             logger.exception("Error handling autocomplete selection")
 
@@ -1560,6 +1678,11 @@ def _cmd_llm_configs(app: ResearchKBApp, args: str) -> None:
 def _cmd_text_extraction_configs(app: ResearchKBApp, args: str) -> None:
     """Configure text extraction settings."""
     app._show_text_extraction_configs()
+
+
+def _cmd_kg_configs(app: ResearchKBApp, args: str) -> None:
+    """Configure knowledge graph settings."""
+    app._show_kg_configs()
 
 
 # Register all commands
@@ -1670,5 +1793,16 @@ _register_command(
         description="Configure text extraction settings",
         takes_argument=False,
         handler=_cmd_text_extraction_configs,
+    )
+)
+
+_register_command(
+    Command(
+        name="/kg-configs",
+        aliases=["/kgc"],
+        usage="/kg-configs",
+        description="Configure knowledge graph settings",
+        takes_argument=False,
+        handler=_cmd_kg_configs,
     )
 )

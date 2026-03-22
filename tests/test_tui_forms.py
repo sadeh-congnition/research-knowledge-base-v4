@@ -94,6 +94,31 @@ async def test_hide_command_prompt_in_llm_configs_form(mock_httpx_responses):
         assert app.query("#welcome")
 
 
+async def test_escape_key_returns_from_semantic_search_view():
+    app = ResearchKBApp()
+    async with app.run_test() as pilot:
+        command_input = app.query_one("#command-input", Input)
+
+        with patch("httpx.get") as mock_get:
+            mock_response = MagicMock(status_code=200)
+            mock_response.json.return_value = {"is_valid": True}
+            mock_get.return_value = mock_response
+
+            app._show_semantic_search()
+            await pilot.pause()
+            await pilot.wait_for_animation()
+
+        assert command_input.display is False
+        assert app.query("#semantic-search-input")
+
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.wait_for_animation()
+
+        assert command_input.display is True
+        assert app.query("#welcome")
+
+
 async def test_hide_command_prompt_in_text_extraction_configs_form(
     mock_httpx_responses,
 ):
@@ -110,6 +135,25 @@ async def test_hide_command_prompt_in_text_extraction_configs_form(
         assert command_input.display is False
 
         # Should be back to main view on escape
+        app.action_escape()
+        await pilot.pause()
+        await pilot.wait_for_animation()
+
+        assert command_input.display is True
+        assert app.query("#welcome")
+
+
+async def test_hide_command_prompt_in_kg_configs_form(mock_httpx_responses):
+    app = ResearchKBApp()
+    async with app.run_test() as pilot:
+        command_input = app.query_one("#command-input", Input)
+
+        app._show_kg_configs()
+        await pilot.pause()
+        await pilot.wait_for_animation()
+
+        assert command_input.display is False
+
         app.action_escape()
         await pilot.pause()
         await pilot.wait_for_animation()

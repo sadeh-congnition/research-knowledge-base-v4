@@ -1,6 +1,6 @@
 import pytest
-from textual.widgets import Static, Label, Input
-from kb.tui.app import ResearchKBApp
+from textual.widgets import Static, Label, Input, OptionList
+from kb.tui.app import ResearchKBApp, _get_command_suggestions
 from unittest.mock import patch, MagicMock
 
 pytestmark = pytest.mark.asyncio
@@ -254,9 +254,7 @@ async def test_slash_help_renders_commands(mock_httpx):
         assert "/search" in content
         assert "/llm-configs" in content
         assert "/text-extraction-configs" in content
-
-        # Verify kg-configs is NOT in the help (it has no real handler)
-        assert "kg-configs" not in content
+        assert "/kg-configs" in content
 
         # Verify the slash requirement hint is present
         assert "All commands must start with /" in content
@@ -288,6 +286,7 @@ async def test_slash_aliases_in_help(mock_httpx):
         assert "/ss" in content  # search alias
         assert "/lc" in content  # llm-configs alias
         assert "/tec" in content  # text-extraction-configs alias
+        assert "/kgc" in content  # kg-configs alias
 
 
 # ---- Autocomplete Tests ----
@@ -351,17 +350,18 @@ async def test_command_registry_has_all_commands(mock_httpx):
         "/search",
         "/llm-configs",
         "/text-extraction-configs",
+        "/kg-configs",
     ]
 
     for cmd_name in expected_canonical:
         assert cmd_name in COMMAND_REGISTRY
 
 
-async def test_kg_configs_not_registered(mock_httpx):
-    """Test that kg-configs is intentionally not registered (no real handler)."""
+async def test_kg_configs_registered(mock_httpx):
+    """Test that kg-configs is registered."""
     from kb.tui.app import COMMAND_REGISTRY
 
-    assert "/kg-configs" not in COMMAND_REGISTRY
+    assert "/kg-configs" in COMMAND_REGISTRY
 
 
 # ---- Integration Tests ----
@@ -419,3 +419,30 @@ async def test_details_command_with_alias_and_arg(mock_httpx):
             # Should show details screen - command input should be hidden
             cmd_input_display = app.query_one("#command-input").display
             assert cmd_input_display is False
+
+
+async def test_input_submit_applies_autocomplete_selection(mock_httpx):
+    """Test that Enter submits the highlighted autocomplete command, not the partial."""
+    app = ResearchKBApp()
+    async with app.run_test() as pilot:
+        cmd_input = app.query_one("#command-input", Input)
+        popup = app.query_one("#autocomplete-popup")
+        option_list = app.query_one("#autocomplete-options", OptionList)
+
+        cmd_input.value = "/res"
+        suggestions = _get_command_suggestions("/res")
+        app._show_autocomplete(suggestions)
+        await pilot.pause()
+
+        assert popup.display is True
+        option_list.highlighted = [cmd.name for cmd in suggestions].index(
+            "/resource-list"
+        )
+
+        await pilot.press("enter")
+        await pilot.pause()
+
+        welcome = app.query_one("#welcome", Static)
+        content = str(welcome.render())
+        assert "Unknown command: /res" not in content
+        assert "No resources found" in content
