@@ -129,6 +129,19 @@ class EmbeddingModelConfig(models.Model):
         return f"{self.model_name} ({self.model_provider})"
 
 
+class SearchConfig(models.Model):
+    name: models.CharField = models.CharField(max_length=255, unique=True)
+    package_path: models.CharField = models.CharField(max_length=255)
+    date_created: models.DateTimeField = models.DateTimeField(auto_now_add=True)
+    date_updated: models.DateTimeField = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.package_path})"
+
+
 class ResourceChat(models.Model):
     resource: models.ForeignKey = models.ForeignKey(
         Resource, on_delete=models.CASCADE, related_name="resource_chats"

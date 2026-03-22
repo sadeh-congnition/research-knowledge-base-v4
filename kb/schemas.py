@@ -126,6 +126,22 @@ class EmbeddingStatusOut(Schema):
     model_name: str | None = None
 
 
+# --- Search Config Schemas ---
+
+
+class SearchConfigIn(Schema):
+    name: str
+    package_path: str
+
+
+class SearchConfigOut(Schema):
+    id: int
+    name: str
+    package_path: str
+    date_created: datetime
+    date_updated: datetime
+
+
 # --- Chat Schemas ---
 
 

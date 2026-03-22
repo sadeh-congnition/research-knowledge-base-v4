@@ -1,7 +1,10 @@
+from unittest.mock import patch
+
+from model_bakery import baker
 from ninja.testing import TestClient
 
 from kb.api import api
-from kb.models import LLMConfig, Secret
+from kb.models import LLMConfig, SearchConfig, Secret
 from kb.schemas import (
     LLMConfigIn,
     LLMConfigOut,
@@ -297,6 +300,44 @@ class TestTextExtractionConfigEndpoints:
 
 
 class TestSearchEndpoints:
+    def test_list_search_configs_includes_seeded_semantic_search(self, db):
+        response = client.get("/search-configs/")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert any(
+            config["name"] == "semantic search"
+            and config["package_path"]
+            == "kb.services.search_engines.semantic_search.search"
+            for config in data
+        )
+
+    def test_create_search_config_valid_package_path(self, db):
+        response = client.post(
+            "/search-configs/",
+            json={
+                "name": "valid engine",
+                "package_path": "tests.search_engines.valid_engine",
+            },
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "valid engine"
+        assert data["package_path"] == "tests.search_engines.valid_engine"
+
+    def test_create_search_config_invalid_package_path_returns_400(self, db):
+        response = client.post(
+            "/search-configs/",
+            json={
+                "name": "invalid engine",
+                "package_path": "tests.search_engines.invalid_engine",
+            },
+        )
+
+        assert response.status_code == 400
+        assert "Invalid package_path" in response.json()["error"]
+
     def test_search_chunks_empty_query(self, db):
         response = client.get("/search/?query=   ")
         if response.status_code != 200:
@@ -304,29 +345,53 @@ class TestSearchEndpoints:
         assert response.status_code == 200
         assert response.json() == []
 
-    def test_search_chunks(self, db, resource_with_chunks):
-        # For tests, we use the actual chromadb instance to do semantic search.
-        # But wait - we shouldn't use mocks as per user instruction.
-        # Since resource_with_chunks is created, chunks were added to Chromadb in `conftest.py` hopefully, or tests rely on the real one.
+    def test_search_without_search_config_id_uses_semantic_search(self, db):
+        with patch("kb.api.load_search_engine") as mock_load_search_engine:
+            mock_load_search_engine.return_value = lambda query, n_results: [
+                {
+                    "document": f"default:{query}:{n_results}",
+                    "distance": 0.123,
+                    "resource_id": 1,
+                    "chunk_order": 2,
+                }
+            ]
+            response = client.get("/search/?query=test%20query&n_results=7")
 
-        # Let's perform a search for text we know exists in the mock/fixture
-        # Fixture usually creates chunk 1 with "first chunk text", chunk 2 with "second chunk text"
-        # Since we use LLM/LMStudio directly, let's just make sure there is no fatal error when searching.
+        assert response.status_code == 200
+        assert response.json() == [
+            {
+                "document": "default:test query:7",
+                "distance": 0.123,
+                "resource_id": 1,
+                "chunk_order": 2,
+            }
+        ]
+        mock_load_search_engine.assert_called_once_with(
+            "kb.services.search_engines.semantic_search.search"
+        )
 
-        # The user rules explicitly state: "Do not use any mocks. Do not monkeypatch anything."
-        # We'll just call the API directly.
-        response = client.get("/search/?query=test%20query")
+    def test_search_with_explicit_search_config_routes_through_selected_engine(
+        self, db
+    ):
+        config = baker.make(
+            SearchConfig,
+            name="explicit engine",
+            package_path="tests.search_engines.explicit_engine",
+        )
+
+        response = client.get(
+            f"/search/?query=routed&n_results=3&search_config_id={config.id}"
+        )
 
         assert response.status_code == 200
         data = response.json()
-
-        # we can't be strictly sure it returns something depending on the similarity threshold/LMStudio,
-        # but we know the result is a parseable list.
-        assert isinstance(data, list)
-
-        if len(data) > 0:
-            parsed = SemanticSearchOut(**data[0])
-            assert parsed.document is not None
-            assert parsed.distance is not None
-            assert parsed.resource_id is not None
-            assert parsed.chunk_order is not None
+        assert data == [
+            {
+                "document": "explicit:routed:3",
+                "distance": 0.456,
+                "resource_id": 22,
+                "chunk_order": 3,
+            }
+        ]
+        parsed = SemanticSearchOut(**data[0])
+        assert parsed.document == "explicit:routed:3"

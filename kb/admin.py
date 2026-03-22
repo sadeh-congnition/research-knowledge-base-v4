@@ -8,6 +8,7 @@ from kb.models import (
     EmbeddingModelConfig,
     LLMConfig,
     Resource,
+    SearchConfig,
     Secret,
     TextExtractionConfig,
 )
@@ -54,3 +55,9 @@ class EmbeddingModelConfigAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
     list_display = ("model_name", "model_provider", "is_active", "date_created")
     list_filter = ("is_active", "model_provider")
     search_fields = ("model_name", "model_provider")
+
+
+@admin.register(SearchConfig)
+class SearchConfigAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
+    list_display = ("name", "package_path", "date_created", "date_updated")
+    search_fields = ("name", "package_path")

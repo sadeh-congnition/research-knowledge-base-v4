@@ -12,6 +12,7 @@ from textual.widgets import (
     Static,
     DataTable,
     OptionList,
+    Select,
 )
 
 import httpx
@@ -320,8 +321,22 @@ class ResourceDetailsScreen(Container):
 class SemanticSearchScreen(Container):
     """Screen for semantic search against chunks."""
 
+    def __init__(
+        self, search_configs: list[dict], default_search_config_id: int
+    ) -> None:
+        super().__init__()
+        self.search_configs = search_configs
+        self.default_search_config_id = default_search_config_id
+
     def compose(self) -> ComposeResult:
         yield Label("[bold]Semantic Search[/bold]", classes="details-header")
+        yield Select(
+            [(config["name"], int(config["id"])) for config in self.search_configs],
+            prompt="Search engine",
+            allow_blank=False,
+            value=self.default_search_config_id,
+            id="semantic-search-config-select",
+        )
         yield Input(placeholder="Type to search...", id="semantic-search-input")
         yield Horizontal(
             VerticalScroll(
@@ -358,10 +373,19 @@ class SemanticSearchScreen(Container):
             return
 
         try:
+            config_select = self.query_one("#semantic-search-config-select", Select)
+            search_config_id = config_select.value
+            if search_config_id == Select.NULL:
+                return
+
             async with httpx.AsyncClient() as client:
                 response = await client.get(
                     f"{BASE_URL}/search/",
-                    params={"query": query, "n_results": 10},
+                    params={
+                        "query": query,
+                        "n_results": 10,
+                        "search_config_id": search_config_id,
+                    },
                     timeout=5.0,
                 )
             if response.status_code == 200:
@@ -422,6 +446,38 @@ class SemanticSearchScreen(Container):
         except Exception:
             logger.exception("Context API error")
             context_view.update("[red]Error loading context. Check logs.[/red]")
+
+
+class SearchConfigScreen(Container):
+    """Screen for listing and creating search configs."""
+
+    def __init__(self, search_configs: list[dict]) -> None:
+        super().__init__()
+        self.search_configs = search_configs
+
+    def compose(self) -> ComposeResult:
+        configs_info = ["[bold]Search Configurations:[/bold]\n"]
+        if self.search_configs:
+            for config in self.search_configs:
+                configs_info.append(
+                    f"  - {config.get('name')} [{config.get('package_path')}]"
+                )
+        else:
+            configs_info.append("  [yellow]No configurations found.[/yellow]")
+
+        yield Container(
+            Label("\n".join(configs_info)),
+            Label("\n[bold]Create Search Config[/bold]"),
+            Label("Name:"),
+            Input(placeholder="semantic search", id="search-config-name"),
+            Label("Package path:"),
+            Input(
+                placeholder="kb.services.search_engines.semantic_search.search",
+                id="search-config-package-path",
+            ),
+            Label("Press Enter on Package path field to submit"),
+            classes="form-container",
+        )
 
 
 class ResearchKBApp(App):
@@ -535,6 +591,10 @@ class ResearchKBApp(App):
     }
     
     /* Semantic Search Layout */
+    #semantic-search-config-select {
+        margin: 1 1 0 1;
+    }
+
     #semantic-search-input {
         margin: 1;
     }
@@ -818,6 +878,9 @@ class ResearchKBApp(App):
             return
         elif input_id == "kg-active":
             self._handle_kg_configs()
+            return
+        elif input_id == "search-config-package-path":
+            self._handle_search_configs()
             return
         elif input_id != "command-input":
             return
@@ -1208,8 +1271,40 @@ class ResearchKBApp(App):
         except Exception as e:
             logger.exception("Error checking embedding config before search")
             self._show_message(f"[red]Error checking embedding status: {e}[/red]")
+            return
 
-        search_screen = SemanticSearchScreen()
+        try:
+            response = httpx.get(f"{BASE_URL}/search-configs/", timeout=10.0)
+            if response.status_code != 200:
+                self._show_message(
+                    f"[red]Error loading search configs: {response.text}[/red]"
+                )
+                return
+
+            search_configs = response.json()
+            default_search_config = next(
+                (
+                    config
+                    for config in search_configs
+                    if config.get("name") == "semantic search"
+                ),
+                None,
+            )
+            if default_search_config is None:
+                self._show_message(
+                    "[red]Cannot perform semantic search: default search config "
+                    "'semantic search' is missing.[/red]"
+                )
+                return
+        except Exception as e:
+            logger.exception("Error loading search configs before search")
+            self._show_message(f"[red]Error loading search configs: {e}[/red]")
+            return
+
+        search_screen = SemanticSearchScreen(
+            search_configs=search_configs,
+            default_search_config_id=int(default_search_config["id"]),
+        )
         container.mount(search_screen)
 
         # Focus the search input field
@@ -1536,6 +1631,67 @@ class ResearchKBApp(App):
             logger.exception("An error occurred")
             self._show_message(f"[red]Error: {e}[/red]")
 
+    # ---- Search Configs ----
+
+    def _show_search_configs(self) -> None:
+        self.query_one("#command-input", Input).display = False
+        container = self.query_one("#main-container", Container)
+        container.remove_children()
+
+        try:
+            response = httpx.get(f"{BASE_URL}/search-configs/", timeout=10.0)
+            if response.status_code == 200:
+                search_configs = response.json()
+            else:
+                self._show_message(f"[red]Error: {response.text}[/red]")
+                return
+        except Exception as e:
+            logger.exception("Could not fetch search configurations")
+            self._show_message(f"[red]Error: {e}[/red]")
+            return
+
+        container.mount(SearchConfigScreen(search_configs=search_configs))
+        self.call_after_refresh(
+            lambda: self.query_one("#search-config-name", Input).focus()
+        )
+
+    def _handle_search_configs(self) -> None:
+        name_input = self.query_one("#search-config-name", Input)
+        package_path_input = self.query_one("#search-config-package-path", Input)
+
+        name = name_input.value.strip()
+        package_path = package_path_input.value.strip()
+
+        if not name:
+            self._show_message("[red]Name is required.[/red]")
+            return
+
+        if not package_path:
+            self._show_message("[red]Package path is required.[/red]")
+            return
+
+        try:
+            response = httpx.post(
+                f"{BASE_URL}/search-configs/",
+                json={"name": name, "package_path": package_path},
+                timeout=10.0,
+            )
+            if response.status_code == 200:
+                data = response.json()
+                self.notify(
+                    f"Search config saved!\n"
+                    f"Name: {data['name']}\n"
+                    f"Package path: {data['package_path']}",
+                    title="Success",
+                    severity="information",
+                )
+                self._show_search_configs()
+            else:
+                self._show_message(f"[red]Error: {response.text}[/red]")
+        except Exception as e:
+            logger.exception("An error occurred")
+            self._show_message(f"[red]Error: {e}[/red]")
+
     # ---- Autocomplete Handling ----
 
     def on_input_changed(self, event: Input.Changed) -> None:
@@ -1722,6 +1878,11 @@ def _cmd_kg_configs(app: ResearchKBApp, args: str) -> None:
     app._show_kg_configs()
 
 
+def _cmd_search_configs(app: ResearchKBApp, args: str) -> None:
+    """Configure search settings."""
+    app._show_search_configs()
+
+
 # Register all commands
 _register_command(
     Command(
@@ -1841,5 +2002,16 @@ _register_command(
         description="Configure knowledge graph settings",
         takes_argument=False,
         handler=_cmd_kg_configs,
+    )
+)
+
+_register_command(
+    Command(
+        name="/search-configs",
+        aliases=["/sc"],
+        usage="/search-configs",
+        description="Configure search settings",
+        takes_argument=False,
+        handler=_cmd_search_configs,
     )
 )

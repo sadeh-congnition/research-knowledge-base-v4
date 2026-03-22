@@ -13,6 +13,7 @@ from kb.models import (
     ChunkConfig,
     LLMConfig,
     Resource,
+    SearchConfig,
     Secret,
     TextExtractionConfig,
     EmbeddingModelConfig,
@@ -39,10 +40,12 @@ from kb.schemas import (
     EmbeddingStatusOut,
     SemanticSearchOut,
     SearchContextOut,
+    SearchConfigIn,
+    SearchConfigOut,
 )
 from kb.services import chat as chat_service
-from kb.services import chromadb_service
 from kb.services import jina as jina_service
+from kb.services import load_search_engine, validate_search_engine
 from kb.services import llm as llm_service
 from events.api import events_router
 
@@ -412,6 +415,32 @@ def get_embedding_status(request) -> dict:
 
 api.add_router("/embedding-configs", embedding_config_router)
 
+# ---- SearchConfig Endpoints ----
+
+search_config_router = Router(tags=["search-configs"])
+
+
+@search_config_router.get("/", response=list[SearchConfigOut])
+def list_search_configs(request) -> list[SearchConfig]:
+    return list(SearchConfig.objects.all())
+
+
+@search_config_router.post("/", response=SearchConfigOut)
+def create_search_config(request, payload: SearchConfigIn):
+    try:
+        validate_search_engine(payload.package_path)
+    except Exception as exc:
+        return api.create_response(
+            request,
+            {"error": f"Invalid package_path: {exc}"},
+            status=400,
+        )
+
+    return SearchConfig.objects.create(**payload.dict())
+
+
+api.add_router("/search-configs", search_config_router)
+
 # ---- Chat Endpoints ----
 
 chat_router = Router(tags=["chat"])
@@ -544,27 +573,29 @@ search_router = Router(tags=["search"])
 
 
 @search_router.get("/", response=list[SemanticSearchOut])
-def search_chunks(request, query: str, n_results: int = 5) -> list[dict]:
-    """Semantic search against chunks in ChromaDB."""
+def search_chunks(
+    request, query: str, n_results: int = 5, search_config_id: int | None = None
+) -> list[dict]:
+    """Search against the selected search engine."""
     if not query.strip():
         return []
 
     try:
-        results = chromadb_service.search(query, n_results=n_results)
-        # Format for output
-        formatted_results = []
-        for res in results:
-            formatted_results.append(
-                {
-                    "document": res["document"],
-                    "distance": res["distance"],
-                    "resource_id": res["metadata"].get("resource_id", 0),
-                    "chunk_order": res["metadata"].get("chunk_order", 0),
-                }
-            )
-        return formatted_results
+        if search_config_id is not None:
+            search_config = get_object_or_404(SearchConfig, id=search_config_id)
+        else:
+            search_config = SearchConfig.objects.filter(name="semantic search").first()
+            if search_config is None:
+                return api.create_response(
+                    request,
+                    {"error": "Default search config 'semantic search' is missing."},
+                    status=500,
+                )
+
+        search_engine = load_search_engine(search_config.package_path)
+        return search_engine(query=query, n_results=n_results)
     except Exception as e:
-        logger.exception("Semantic search failed")
+        logger.exception("Search failed")
         return api.create_response(
             request, {"error": f"Search failed: {e}"}, status=500
         )

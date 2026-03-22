@@ -255,6 +255,7 @@ async def test_slash_help_renders_commands(mock_httpx):
         assert "/llm-configs" in content
         assert "/text-extraction-configs" in content
         assert "/kg-configs" in content
+        assert "/search-configs" in content
 
         # Verify the slash requirement hint is present
         assert "All commands must start with /" in content
@@ -287,6 +288,7 @@ async def test_slash_aliases_in_help(mock_httpx):
         assert "/lc" in content  # llm-configs alias
         assert "/tec" in content  # text-extraction-configs alias
         assert "/kgc" in content  # kg-configs alias
+        assert "/sc" in content  # search-configs alias
 
 
 # ---- Autocomplete Tests ----
@@ -351,6 +353,7 @@ async def test_command_registry_has_all_commands(mock_httpx):
         "/llm-configs",
         "/text-extraction-configs",
         "/kg-configs",
+        "/search-configs",
     ]
 
     for cmd_name in expected_canonical:
@@ -362,6 +365,13 @@ async def test_kg_configs_registered(mock_httpx):
     from kb.tui.app import COMMAND_REGISTRY
 
     assert "/kg-configs" in COMMAND_REGISTRY
+
+
+async def test_search_configs_registered(mock_httpx):
+    """Test that search-configs is registered."""
+    from kb.tui.app import COMMAND_REGISTRY
+
+    assert "/search-configs" in COMMAND_REGISTRY
 
 
 # ---- Integration Tests ----
