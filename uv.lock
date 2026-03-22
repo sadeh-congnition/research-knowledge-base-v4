@@ -619,6 +619,7 @@ dependencies = [
     { name = "django" },
     { name = "django-llm-chat" },
     { name = "django-ninja" },
+    { name = "embed-gen" },
     { name = "numpy" },
     { name = "pytest-django" },
     { name = "python-dotenv" },
@@ -633,9 +634,10 @@ requires-dist = [
     { name = "black", marker = "extra == 'dev'", specifier = ">=23.0.0" },
     { name = "chromadb", specifier = ">=0.4.0" },
     { name = "django", specifier = ">=5.2.8" },
-    { name = "django-llm-chat" },
+    { name = "django-llm-chat", editable = "../llm_chat" },
     { name = "django-ninja", specifier = ">=1.0" },
     { name = "django-stubs", marker = "extra == 'dev'", specifier = ">=4.2.0" },
+    { name = "embed-gen", editable = "../embed_gen" },
     { name = "numpy", specifier = ">=1.24.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },
@@ -651,6 +653,9 @@ provides-extras = ["dev"]
 [package.metadata.requires-dev]
 dev = [
     { name = "flake8", specifier = ">=5.0.4" },
+    { name = "model-bakery", specifier = ">=1.23.3" },
+    { name = "pytest", specifier = ">=9.0.2" },
+    { name = "pytest-django", specifier = ">=4.12.0" },
     { name = "ruff", specifier = ">=0.15.6" },
 ]
 

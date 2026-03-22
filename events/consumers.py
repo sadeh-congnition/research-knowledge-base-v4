@@ -762,11 +762,39 @@ def consume_update_knowledge_graph() -> int:
                     # Just mock for test
                     pass
                 else:
-                    # Dynamically import and run. Assuming package_name exposes a run_update(chat_id) function
+                    # Dynamically import and run. Package should expose a run_update function
+                    # with signature: run_update(content, metadata, track_id, llm_model, llm_temperature)
                     try:
+                        from django_llm_chat.models import Message
+
                         pkg = importlib.import_module(config.package_name)
                         if hasattr(pkg, "run_update"):
-                            pkg.run_update(chat_id)
+                            # Fetch chat messages to build content
+                            messages = Message.objects.filter(chat_id=chat_id).order_by(
+                                "date_created"
+                            )
+                            content = "\n\n".join(
+                                [
+                                    f"{msg.type}: {msg.text}"
+                                    for msg in messages
+                                    if msg.text
+                                ]
+                            )
+                            metadata = {
+                                "chat_id": chat_id,
+                                "config_id": config_id,
+                                "config_name": config.name,
+                            }
+                            track_id = f"chat_{chat_id}_config_{config_id}"
+                            result = pkg.run_update(
+                                content=content,
+                                metadata=metadata,
+                                track_id=track_id,
+                            )
+                            if "error" in result:
+                                logger.error(
+                                    f"KG update failed for chat {chat_id}: {result.get('message', 'Unknown error')}"
+                                )
                         else:
                             logger.error(
                                 f"Package {config.package_name} does not have 'run_update' function."

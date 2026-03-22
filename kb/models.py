@@ -160,7 +160,7 @@ class Reference(models.Model):
 class KnowledgeGraphConfig(models.Model):
     name: models.CharField = models.CharField(max_length=255, unique=True)
     package_name: models.CharField = models.CharField(
-        max_length=255, default="lightrag_app"
+        max_length=255, default="django_lightrag"
     )
     update_trigger: models.CharField = models.CharField(
         max_length=255,

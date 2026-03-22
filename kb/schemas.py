@@ -184,7 +184,7 @@ class SearchContextOut(Schema):
 
 class KnowledgeGraphConfigIn(Schema):
     name: str
-    package_name: str = "lightrag_app"
+    package_name: str = "django_lightrag"
     update_trigger: str = "always"
     is_active: bool = False
 
