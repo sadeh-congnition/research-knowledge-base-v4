@@ -1228,30 +1228,6 @@ wheels = [
 ]
 
 [[package]]
-name = "ladybug-viz"
-version = "0.1.0"
-source = { editable = "../ladybug_viz_django" }
-dependencies = [
-    { name = "django" },
-    { name = "django-ninja" },
-    { name = "pytest" },
-    { name = "pytest-django" },
-    { name = "real-ladybug" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "django", specifier = ">=4.2" },
-    { name = "django-ninja", specifier = ">=1.0" },
-    { name = "pytest", specifier = ">=9.0.2" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
-    { name = "pytest-django", specifier = ">=4.12.0" },
-    { name = "pytest-django", marker = "extra == 'dev'", specifier = ">=4.5" },
-    { name = "real-ladybug", specifier = ">=0.1" },
-]
-provides-extras = ["dev"]
-
-[[package]]
 name = "linkify-it-py"
 version = "2.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2668,7 +2644,6 @@ dependencies = [
 dev = [
     { name = "django-chromadb-viz" },
     { name = "django-llm-chat" },
-    { name = "ladybug-viz" },
     { name = "ptpython" },
     { name = "ruff" },
 ]
@@ -2701,7 +2676,6 @@ requires-dist = [
 dev = [
     { name = "django-chromadb-viz", editable = "../chroma_viz_django" },
     { name = "django-llm-chat", editable = "../llm_chat" },
-    { name = "ladybug-viz", editable = "../ladybug_viz_django" },
     { name = "ptpython", specifier = ">=3.0.32" },
     { name = "ruff", specifier = ">=0.15.5" },
 ]

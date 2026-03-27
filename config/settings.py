@@ -44,7 +44,7 @@ INSTALLED_APPS = [
     "django_chromadb_viz",
     "django_lightrag",
     "sqlite_viz",
-    "ladybug_viz",
+    # "ladybug_viz",
 ]
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

@@ -73,19 +73,14 @@ def chat_with_resource(
         api_key=api_key,
     )
 
-    backend = (
-        "lmstudio"
-        if llm_config.provider == llm_service.LLMProvider.LMSTUDIO
-        else "litellm"
-    )
-    ai_msg, _, _ = chat_instance.send_user_msg_to_llm(
+    chat_instance.call_llm(
         model_name=model_name,
-        text=user_message,
+        message=user_message,
         user=user,
         include_chat_history=True,
-        backend=backend,
     )
 
+    ai_msg = chat_instance.last_llm_message
     return ai_msg.text, chat_instance
 
 
@@ -131,17 +126,11 @@ def stream_chat_with_resource(
     # Yield the chat_id first so the TUI knows which chat this belongs to
     yield f"__CHAT_ID__:{chat_instance.chat_db_model.id}"
 
-    backend = (
-        "lmstudio"
-        if llm_config.provider == llm_service.LLMProvider.LMSTUDIO
-        else "litellm"
-    )
-    yield from chat_instance.stream_user_msg_to_llm(
+    yield from chat_instance.stream_call_llm(
         model_name=model_name,
-        text=user_message,
+        message=user_message,
         user=user,
         include_chat_history=True,
-        backend=backend,
     )
 
 
@@ -237,18 +226,14 @@ def continue_chat(
     # django_llm_chat/chat.py handles this in Chat.create().
     # We can probably use a similar logic or see if there's a better way.
 
-    llm_user, _ = User.objects.get_or_create(
-        username="litellm", defaults={"password": "litellm"}
-    )
-
-    default_user, _ = User.objects.get_or_create(
-        username="djllmchat", defaults={"password": "djllmchat"}
-    )
+    try:
+        llm_user = ChatModel.get_llm_user()
+    except User.DoesNotExist:
+        llm_user = ChatModel.create_llm_user()
 
     chat_instance = Chat(
         chat_db_model=chat_db_model,
         llm_user=llm_user,
-        default_user=default_user,
     )
 
     # Determine the model name
@@ -260,19 +245,14 @@ def continue_chat(
         api_key=api_key,
     )
 
-    backend = (
-        "lmstudio"
-        if llm_config.provider == llm_service.LLMProvider.LMSTUDIO
-        else "litellm"
-    )
-    ai_msg, _, _ = chat_instance.send_user_msg_to_llm(
+    chat_instance.call_llm(
         model_name=model_name,
-        text=user_message,
+        message=user_message,
         user=user,
         include_chat_history=True,
-        backend=backend,
     )
 
+    ai_msg = chat_instance.last_llm_message
     return ai_msg.text, chat_instance
 
 
@@ -285,18 +265,14 @@ def stream_continue_chat(
     user = _get_or_create_chat_user()
     chat_db_model = ChatModel.objects.get(id=chat_id)
 
-    llm_user, _ = User.objects.get_or_create(
-        username="litellm", defaults={"password": "litellm"}
-    )
-
-    default_user, _ = User.objects.get_or_create(
-        username="djllmchat", defaults={"password": "djllmchat"}
-    )
+    try:
+        llm_user = ChatModel.get_llm_user()
+    except User.DoesNotExist:
+        llm_user = ChatModel.create_llm_user()
 
     chat_instance = Chat(
         chat_db_model=chat_db_model,
         llm_user=llm_user,
-        default_user=default_user,
     )
 
     # Determine the model name
@@ -308,15 +284,9 @@ def stream_continue_chat(
         api_key=api_key,
     )
 
-    backend = (
-        "lmstudio"
-        if llm_config.provider == llm_service.LLMProvider.LMSTUDIO
-        else "litellm"
-    )
-    yield from chat_instance.stream_user_msg_to_llm(
+    yield from chat_instance.stream_call_llm(
         model_name=model_name,
-        text=user_message,
+        message=user_message,
         user=user,
         include_chat_history=True,
-        backend=backend,
     )

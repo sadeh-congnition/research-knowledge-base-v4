@@ -33,13 +33,13 @@ django-chromadb-viz = { path = "../chroma_viz_django", editable = true }
 embed-gen = { path = "../embed_gen", editable = true }
 django-lightrag = { path = "../lightrag_django", editable = true }
 django-sqlite3-viz = { path = "../sqlite3_viz_django", editable = true }
-ladybug-viz = { path = "../ladybug_viz_django", editable = true }
+# ladybug-viz = { path = "../ladybug_viz_django", editable = true }
 
 [dependency-groups]
 dev = [
   "django-chromadb-viz",
   "django-llm-chat",
-  "ladybug-viz",
+  #  "ladybug-viz",
   "ptpython>=3.0.32",
   "ruff>=0.15.5",
 ]

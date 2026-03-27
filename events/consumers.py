@@ -766,6 +766,8 @@ def consume_update_knowledge_graph() -> int:
                     # with signature: run_update(content, metadata, track_id, llm_model, llm_temperature)
                     try:
                         from django_llm_chat.models import Message
+                        from kb.models import ChunkConfig
+                        from kb.services import chunking as chunking_service
 
                         pkg = importlib.import_module(config.package_name)
                         if hasattr(pkg, "run_update"):
@@ -773,28 +775,43 @@ def consume_update_knowledge_graph() -> int:
                             messages = Message.objects.filter(chat_id=chat_id).order_by(
                                 "date_created"
                             )
-                            content = "\n\n".join(
+                            full_content = "\n\n".join(
                                 [
                                     f"{msg.type}: {msg.text}"
                                     for msg in messages
                                     if msg.text
                                 ]
                             )
-                            metadata = {
-                                "chat_id": chat_id,
-                                "config_id": config_id,
-                                "config_name": config.name,
-                            }
-                            track_id = f"chat_{chat_id}_config_{config_id}"
-                            result = pkg.run_update(
-                                content=content,
-                                metadata=metadata,
-                                track_id=track_id,
-                            )
-                            if "error" in result:
-                                logger.error(
-                                    f"KG update failed for chat {chat_id}: {result.get('message', 'Unknown error')}"
+
+                            chunk_config = ChunkConfig.objects.first()
+                            if chunk_config and full_content:
+                                chunks = chunking_service.chunk_text(
+                                    full_content, chunk_config.details
                                 )
+                            elif full_content:
+                                chunks = [full_content]
+                            else:
+                                chunks = []
+
+                            for i, chunk_text in enumerate(chunks):
+                                metadata = {
+                                    "chat_id": chat_id,
+                                    "config_id": config_id,
+                                    "config_name": config.name,
+                                    "chunk_index": i,
+                                }
+                                track_id = (
+                                    f"chat_{chat_id}_config_{config_id}_chunk_{i}"
+                                )
+                                result = pkg.run_update(
+                                    content=chunk_text,
+                                    metadata=metadata,
+                                    track_id=track_id,
+                                )
+                                if "error" in result:
+                                    logger.error(
+                                        f"KG update failed for chat {chat_id} chunk {i}: {result.get('message', 'Unknown error')}"
+                                    )
                         else:
                             logger.error(
                                 f"Package {config.package_name} does not have 'run_update' function."
